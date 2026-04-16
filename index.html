@@ -276,7 +276,7 @@
                         </div>
                         <div class="dimension-value">/40</div>
                     </div>
-                    <div class="dimension-sub">52周位置: ${details.position_52w !== undefined ? details.position_52w : '--'}%</div>
+                    <div class="dimension-sub">近一年位置: ${details.position_52w !== undefined ? details.position_52w : '--'}%</div>
                     
                     <div class="dimension-row">
                         <div class="dimension-label">恐慌维度</div>
@@ -316,7 +316,7 @@
                         <div class="metric-sub">偏离: ${data.ma200_distance > 0 ? '+' : ''}${data.ma200_distance.toFixed(1)}%</div>
                     </div>
                     <div class="metric-card">
-                        <div class="metric-label">52周位置</div>
+                        <div class="metric-label">近一年位置</div>
                         <div class="metric-value">${details.position_52w !== undefined ? details.position_52w + '%' : '--'}</div>
                         <div class="metric-sub">${details.position_52w > 90 ? '历史高位' : details.position_52w < 10 ? '历史低位' : '中间位置'}</div>
                     </div>
