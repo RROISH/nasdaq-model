@@ -3,262 +3,170 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>纳指买卖模型 | Nasdaq Trading Model</title>
+    <title>纳指买卖模型 v2.0 | 五维评分体系</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            -webkit-tap-highlight-color: transparent;
-        }
-        
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
             min-height: 100vh;
             color: #333;
             padding: 10px;
         }
-        
         .container {
             max-width: 600px;
             margin: 0 auto;
-            background: rgba(255,255,255,0.95);
+            background: rgba(255,255,255,0.98);
             border-radius: 20px;
             padding: 20px;
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
         }
-        
-        h1 {
-            text-align: center;
-            color: #1e3c72;
-            margin-bottom: 20px;
-            font-size: 24px;
-        }
+        h1 { text-align: center; color: #1e3c72; margin-bottom: 5px; font-size: 24px; }
+        .subtitle { text-align: center; color: #64748b; font-size: 12px; margin-bottom: 20px; }
         
         .date-control {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-            margin-bottom: 20px;
-            background: #f0f4f8;
-            padding: 10px;
-            border-radius: 12px;
+            display: flex; align-items: center; justify-content: center; gap: 10px;
+            margin-bottom: 20px; background: #f0f4f8; padding: 10px; border-radius: 12px;
+        }
+        .nav-btn {
+            width: 40px; height: 40px; border: none; background: #2a5298; color: white;
+            border-radius: 50%; font-size: 18px; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .nav-btn:active { transform: scale(0.95); background: #1e3c72; }
+        input[type="date"] {
+            padding: 8px 12px; border: 2px solid #2a5298; border-radius: 8px;
+            font-size: 16px; background: white;
         }
         
-        .nav-btn {
-            width: 40px;
-            height: 40px;
-            border: none;
-            background: #2a5298;
-            color: white;
-            border-radius: 50%;
-            font-size: 18px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+        /* 信号卡片 - 根据分数变色 */
+        .signal-card {
+            padding: 25px; border-radius: 16px; text-align: center; margin-bottom: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2); color: white;
             transition: all 0.3s;
         }
-        
-        .nav-btn:active {
-            transform: scale(0.95);
-            background: #1e3c72;
-        }
-        
-        input[type="date"] {
-            padding: 8px 12px;
-            border: 2px solid #2a5298;
-            border-radius: 8px;
-            font-size: 16px;
-            background: white;
-            color: #333;
-        }
-        
-        .signal-card {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 20px;
-            border-radius: 16px;
-            text-align: center;
-            margin-bottom: 20px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-        }
-        
-        .signal-title {
-            font-size: 14px;
-            opacity: 0.9;
-            margin-bottom: 5px;
-        }
-        
-        .signal-value {
-            font-size: 32px;
-            font-weight: bold;
-            margin: 10px 0;
-        }
-        
-        .signal-desc {
-            font-size: 14px;
-            opacity: 0.9;
-        }
-        
-        .signal-buy { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); }
+        .signal-strong-buy { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); }
+        .signal-buy { background: linear-gradient(135deg, #56ab2f 0%, #a8e6cf 100%); }
+        .signal-accumulate { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
+        .signal-hold { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
+        .signal-reduce { background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); color: #333; }
         .signal-sell { background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%); }
-        .signal-hold { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
+        .signal-strong-sell { background: linear-gradient(135deg, #8e0e00 0%, #1f1c18 100%); }
         
-        .metrics-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 12px;
+        .signal-emoji { font-size: 48px; margin-bottom: 10px; }
+        .signal-title { font-size: 28px; font-weight: bold; margin-bottom: 5px; }
+        .signal-desc { font-size: 14px; opacity: 0.95; }
+        
+        /* 五维评分雷达图区域 */
+        .dimensions {
+            background: #f8fafc; padding: 20px; border-radius: 16px;
             margin-bottom: 20px;
         }
+        .dimensions-title {
+            font-size: 16px; font-weight: bold; color: #1e3c72;
+            margin-bottom: 15px; text-align: center;
+        }
+        .dimension-row {
+            display: flex; align-items: center; margin-bottom: 12px;
+        }
+        .dimension-label {
+            width: 80px; font-size: 13px; color: #64748b;
+        }
+        .dimension-bar {
+            flex: 1; height: 24px; background: #e2e8f0;
+            border-radius: 12px; overflow: hidden; position: relative;
+            margin: 0 10px;
+        }
+        .dimension-fill {
+            height: 100%; border-radius: 12px;
+            display: flex; align-items: center; justify-content: flex-end;
+            padding-right: 8px; color: white; font-size: 12px; font-weight: bold;
+            transition: width 0.5s ease;
+        }
+        .dim-valuation { background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); }
+        .dim-fear { background: linear-gradient(90deg, #f093fb 0%, #f5576c 100%); }
+        .dim-trend { background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%); }
+        .dim-momentum { background: linear-gradient(90deg, #43e97b 0%, #38f9d7 100%); }
+        .dim-volatility { background: linear-gradient(90deg, #fa709a 0%, #fee140 100%); }
+        .dimension-value { width: 40px; text-align: right; font-weight: bold; color: #1e293b; }
         
+        /* 综合评分 */
+        .score-section {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px; border-radius: 16px; margin-bottom: 20px;
+            color: white; text-align: center;
+        }
+        .score-title { font-size: 14px; opacity: 0.9; margin-bottom: 10px; }
+        .score-number { font-size: 56px; font-weight: bold; margin: 10px 0; }
+        .score-bar-bg {
+            width: 100%; height: 20px; background: rgba(255,255,255,0.3);
+            border-radius: 10px; overflow: hidden; margin-top: 10px;
+        }
+        .score-bar-fill {
+            height: 100%; background: white; border-radius: 10px;
+            transition: width 0.5s ease; box-shadow: 0 0 10px rgba(255,255,255,0.5);
+        }
+        
+        /* 指标网格 */
+        .metrics-grid {
+            display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;
+            margin-bottom: 20px;
+        }
         .metric-card {
-            background: #f8fafc;
-            padding: 15px;
-            border-radius: 12px;
+            background: #f8fafc; padding: 15px; border-radius: 12px;
             border-left: 4px solid #2a5298;
         }
+        .metric-label { font-size: 12px; color: #64748b; margin-bottom: 5px; text-transform: uppercase; }
+        .metric-value { font-size: 20px; font-weight: bold; color: #1e293b; }
+        .metric-sub { font-size: 11px; color: #94a3b8; margin-top: 3px; }
         
-        .metric-label {
-            font-size: 12px;
-            color: #64748b;
-            margin-bottom: 5px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        
-        .metric-value {
-            font-size: 20px;
-            font-weight: bold;
-            color: #1e293b;
-        }
-        
-        .metric-change {
-            font-size: 12px;
-            margin-top: 3px;
-        }
-        
-        .positive { color: #10b981; }
-        .negative { color: #ef4444; }
-        
+        /* 图表容器 */
         .chart-container {
-            background: #f8fafc;
-            padding: 15px;
-            border-radius: 12px;
-            margin-bottom: 20px;
-            height: 250px;
-            position: relative;
+            background: #f8fafc; padding: 15px; border-radius: 12px;
+            margin-bottom: 20px; height: 280px; position: relative;
         }
+        .chart-title { font-size: 14px; color: #64748b; margin-bottom: 10px; text-align: center; }
+        canvas { width: 100%; height: 220px; }
         
-        .chart-title {
-            font-size: 14px;
-            color: #64748b;
-            margin-bottom: 10px;
-            text-align: center;
-        }
+        .loading { text-align: center; padding: 40px; color: #64748b; }
+        .error { background: #fee2e2; color: #dc2626; padding: 15px; border-radius: 12px; text-align: center; margin: 20px 0; }
+        .last-update { text-align: center; font-size: 11px; color: #94a3b8; margin-top: 20px; }
         
-        canvas {
-            width: 100%;
-            height: 200px;
-        }
-        
-        .legend {
-            display: flex;
-            justify-content: center;
-            gap: 20px;
-            margin-top: 10px;
-            font-size: 12px;
-            color: #64748b;
-        }
-        
-        .legend-item {
-            display: flex;
-            align-items: center;
-            gap: 5px;
-        }
-        
-        .legend-dot {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-        }
-        
-        .score-section {
-            background: #f0f4f8;
-            padding: 15px;
-            border-radius: 12px;
-            margin-bottom: 20px;
-        }
-        
-        .score-bar {
-            width: 100%;
-            height: 30px;
-            background: #e2e8f0;
-            border-radius: 15px;
-            overflow: hidden;
-            position: relative;
-            margin-top: 10px;
-        }
-        
-        .score-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #ef4444 0%, #eab308 50%, #22c55e 100%);
-            transition: width 0.5s ease;
-            display: flex;
-            align-items: center;
-            justify-content: flex-end;
-            padding-right: 10px;
-            color: white;
-            font-weight: bold;
-            font-size: 14px;
-        }
-        
-        .loading {
-            text-align: center;
-            padding: 40px;
-            color: #64748b;
-        }
-        
-        .error {
-            background: #fee2e2;
-            color: #dc2626;
-            padding: 15px;
-            border-radius: 12px;
-            text-align: center;
-            margin: 20px 0;
-        }
-        
-        .last-update {
-            text-align: center;
-            font-size: 12px;
-            color: #94a3b8;
+        /* 历史信号统计 */
+        .stats-section {
+            background: #f0f4f8; padding: 15px; border-radius: 12px;
             margin-top: 20px;
         }
+        .stats-title { font-size: 14px; font-weight: bold; color: #1e3c72; margin-bottom: 10px; }
+        .stats-grid {
+            display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; text-align: center;
+        }
+        .stat-item { font-size: 11px; }
+        .stat-count { font-size: 18px; font-weight: bold; color: #2a5298; }
+        .stat-label { color: #64748b; font-size: 10px; }
         
         @media (max-width: 480px) {
             .container { padding: 15px; }
             h1 { font-size: 20px; }
-            .metrics-grid { grid-template-columns: 1fr; gap: 8px; }
-            .signal-value { font-size: 28px; }
-            .nav-btn { width: 36px; height: 36px; }
+            .signal-title { font-size: 24px; }
+            .score-number { font-size: 48px; }
+            .metrics-grid { grid-template-columns: 1fr; }
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>📈 纳指买卖模型</h1>
+        <h1>📈 纳指买卖模型 v2.0</h1>
+        <div class="subtitle">五维智能评分体系</div>
         
         <div class="date-control">
-            <button class="nav-btn" onclick="changeDate(-1)" title="前一天">◀</button>
+            <button class="nav-btn" onclick="changeDate(-1)">◀</button>
             <input type="date" id="dateInput" onchange="loadData()">
-            <button class="nav-btn" onclick="changeDate(1)" title="后一天">▶</button>
+            <button class="nav-btn" onclick="changeDate(1)">▶</button>
         </div>
         
-        <div id="content">
-            <div class="loading">加载中...</div>
-        </div>
+        <div id="content"><div class="loading">加载中...</div></div>
         
         <div class="last-update" id="lastUpdate"></div>
     </div>
@@ -267,39 +175,33 @@
         let currentData = null;
         let availableDates = [];
         
-        // 初始化
         document.addEventListener('DOMContentLoaded', async () => {
             await loadDataFile();
-            // 默认显示最新日期
             if (availableDates.length > 0) {
                 document.getElementById('dateInput').value = availableDates[availableDates.length - 1];
                 loadData();
             }
         });
         
-        // 加载数据文件
         async function loadDataFile() {
             try {
                 const response = await fetch('data/nasdaq_data.json?t=' + Date.now());
-                if (!response.ok) throw new Error('数据加载失败');
+                if (!response.ok) throw new Error('加载失败');
                 currentData = await response.json();
                 availableDates = Object.keys(currentData.daily_data || {}).sort();
                 document.getElementById('lastUpdate').textContent = 
-                    '数据更新时间: ' + new Date(currentData.last_update).toLocaleString('zh-CN');
+                    '数据更新: ' + new Date(currentData.last_update).toLocaleString('zh-CN');
             } catch (error) {
                 document.getElementById('content').innerHTML = 
-                    '<div class="error">数据加载失败，请稍后重试</div>';
+                    '<div class="error">数据加载失败，请刷新重试</div>';
             }
         }
         
-        // 切换日期
         function changeDate(days) {
             const current = document.getElementById('dateInput').value;
             if (!current || availableDates.length === 0) return;
-            
             const idx = availableDates.indexOf(current);
             if (idx === -1) return;
-            
             const newIdx = idx + days;
             if (newIdx >= 0 && newIdx < availableDates.length) {
                 document.getElementById('dateInput').value = availableDates[newIdx];
@@ -307,7 +209,6 @@
             }
         }
         
-        // 加载并显示数据
         function loadData() {
             const date = document.getElementById('dateInput').value;
             if (!date || !currentData) return;
@@ -322,84 +223,130 @@
             renderContent(dayData, date);
         }
         
-        // 渲染内容
+        function getSignalClass(score) {
+            if (score >= 90) return 'signal-strong-buy';
+            if (score >= 75) return 'signal-buy';
+            if (score >= 60) return 'signal-accumulate';
+            if (score >= 40) return 'signal-hold';
+            if (score >= 25) return 'signal-reduce';
+            if (score >= 10) return 'signal-sell';
+            return 'signal-strong-sell';
+        }
+        
+        function getSignalEmoji(score) {
+            if (score >= 90) return '🔥';
+            if (score >= 75) return '📈';
+            if (score >= 60) return '💰';
+            if (score >= 40) return '⏸️';
+            if (score >= 25) return '⚠️';
+            if (score >= 10) return '📉';
+            return '🚨';
+        }
+        
         function renderContent(data, date) {
-            const signalClass = data.signal === '买入' ? 'signal-buy' : 
-                               data.signal === '卖出' ? 'signal-sell' : 'signal-hold';
+            const score = data.score;
+            const signalClass = getSignalClass(score);
+            const emoji = getSignalEmoji(score);
+            const details = data.details || {};
             
             const content = `
                 <div class="signal-card ${signalClass}">
-                    <div class="signal-title">交易信号</div>
-                    <div class="signal-value">${data.signal}</div>
+                    <div class="signal-emoji">${emoji}</div>
+                    <div class="signal-title">${data.signal}</div>
                     <div class="signal-desc">${data.signal_desc}</div>
                 </div>
                 
                 <div class="score-section">
-                    <div class="metric-label">综合评分 (0-100，越高越适合买入)</div>
-                    <div class="score-bar">
-                        <div class="score-fill" style="width: ${data.score}%">${data.score}分</div>
+                    <div class="score-title">五维综合评分</div>
+                    <div class="score-number">${score}</div>
+                    <div class="score-bar-bg">
+                        <div class="score-bar-fill" style="width: ${score}%"></div>
+                    </div>
+                </div>
+                
+                <div class="dimensions">
+                    <div class="dimensions-title">📊 五维评分详情</div>
+                    <div class="dimension-row">
+                        <div class="dimension-label">估值维度</div>
+                        <div class="dimension-bar">
+                            <div class="dimension-fill dim-valuation" style="width: ${(details.valuation || 0) / 30 * 100}%">${details.valuation || 0}</div>
+                        </div>
+                        <div class="dimension-value">/30</div>
+                    </div>
+                    <div class="dimension-row">
+                        <div class="dimension-label">恐慌维度</div>
+                        <div class="dimension-bar">
+                            <div class="dimension-fill dim-fear" style="width: ${(details.fear || 0) / 25 * 100}%">${details.fear || 0}</div>
+                        </div>
+                        <div class="dimension-value">/25</div>
+                    </div>
+                    <div class="dimension-row">
+                        <div class="dimension-label">趋势维度</div>
+                        <div class="dimension-bar">
+                            <div class="dimension-fill dim-trend" style="width: ${(details.trend || 0) / 20 * 100}%">${details.trend || 0}</div>
+                        </div>
+                        <div class="dimension-value">/20</div>
+                    </div>
+                    <div class="dimension-row">
+                        <div class="dimension-label">动量维度</div>
+                        <div class="dimension-bar">
+                            <div class="dimension-fill dim-momentum" style="width: ${(details.momentum || 0) / 15 * 100}%">${details.momentum || 0}</div>
+                        </div>
+                        <div class="dimension-value">/15</div>
+                    </div>
+                    <div class="dimension-row">
+                        <div class="dimension-label">波动维度</div>
+                        <div class="dimension-bar">
+                            <div class="dimension-fill dim-volatility" style="width: ${(details.volatility || 0) / 10 * 100}%">${details.volatility || 0}</div>
+                        </div>
+                        <div class="dimension-value">/10</div>
                     </div>
                 </div>
                 
                 <div class="metrics-grid">
                     <div class="metric-card">
-                        <div class="metric-label">纳指收盘价</div>
+                        <div class="metric-label">纳指价格</div>
                         <div class="metric-value">${data.price.toFixed(2)}</div>
-                        <div class="metric-change ${data.change >= 0 ? 'positive' : 'negative'}">
-                            ${data.change >= 0 ? '↑' : '↓'} ${Math.abs(data.change_percent).toFixed(2)}%
-                        </div>
+                        <div class="metric-sub">${data.change >= 0 ? '+' : ''}${data.change_percent.toFixed(2)}%</div>
                     </div>
-                    
                     <div class="metric-card">
                         <div class="metric-label">VIX恐慌指数</div>
                         <div class="metric-value">${data.vix.toFixed(2)}</div>
-                        <div class="metric-change ${data.vix > 20 ? 'positive' : 'negative'}">
-                            ${data.vix > 20 ? '恐慌' : '正常'}
-                        </div>
+                        <div class="metric-sub">${data.vix > 25 ? '恐慌' : data.vix > 15 ? '正常' : '低迷'}</div>
                     </div>
-                    
                     <div class="metric-card">
-                        <div class="metric-label">PE百分位</div>
-                        <div class="metric-value">${(data.pe_percentile * 100).toFixed(1)}%</div>
-                        <div class="metric-change">${data.pe_percentile < 0.3 ? '低估' : data.pe_percentile > 0.7 ? '高估' : '合理'}</div>
+                        <div class="metric-label">200日均线</div>
+                        <div class="metric-value">${data.ma200 ? data.ma200.toFixed(0) : '--'}</div>
+                        <div class="metric-sub">${data.ma200_distance > 0 ? '+' : ''}${data.ma200_distance.toFixed(1)}%</div>
                     </div>
-                    
                     <div class="metric-card">
-                        <div class="metric-label">距200日均线</div>
-                        <div class="metric-value">${data.ma200_distance > 0 ? '+' : ''}${data.ma200_distance.toFixed(1)}%</div>
-                        <div class="metric-change">${data.ma200_distance < -10 ? '超跌' : data.ma200_distance > 10 ? '超买' : '正常'}</div>
+                        <div class="metric-label">估值百分位</div>
+                        <div class="metric-value">${((details.pe_pct || 0.5) * 100).toFixed(1)}%</div>
+                        <div class="metric-sub">${(details.pe_pct || 0.5) < 0.3 ? '低估' : (details.pe_pct || 0.5) > 0.7 ? '高估' : '合理'}</div>
                     </div>
                 </div>
                 
                 <div class="chart-container">
-                    <div class="chart-title">近一年走势图与信号点</div>
-                    <canvas id="trendChart"></canvas>
-                    <div class="legend">
-                        <div class="legend-item">
-                            <div class="legend-dot" style="background: #2a5298"></div>
-                            <span>纳指价格</span>
-                        </div>
-                        <div class="legend-item">
-                            <div class="legend-dot" style="background: #10b981"></div>
-                            <span>买入点</span>
-                        </div>
-                        <div class="legend-item">
-                            <div class="legend-dot" style="background: #ef4444"></div>
-                            <span>卖出点</span>
-                        </div>
-                    </div>
+                    <div class="chart-title">近一年评分走势与信号分布</div>
+                    <canvas id="scoreChart"></canvas>
+                </div>
+                
+                <div class="stats-section">
+                    <div class="stats-title">📈 今年信号统计</div>
+                    <div class="stats-grid" id="statsGrid">计算中...</div>
                 </div>
             `;
             
             document.getElementById('content').innerHTML = content;
             
-            // 绘制图表
-            setTimeout(() => drawChart(date), 100);
+            setTimeout(() => {
+                drawChart(date);
+                calculateStats();
+            }, 100);
         }
         
-        // 绘制走势图
         function drawChart(currentDate) {
-            const canvas = document.getElementById('trendChart');
+            const canvas = document.getElementById('scoreChart');
             if (!canvas) return;
             
             const ctx = canvas.getContext('2d');
@@ -411,61 +358,96 @@
             const width = rect.width;
             const height = rect.height;
             
-            // 获取近一年数据
             const endIdx = availableDates.indexOf(currentDate);
-            const startIdx = Math.max(0, endIdx - 250); // 近250个交易日
+            const startIdx = Math.max(0, endIdx - 250);
             const dates = availableDates.slice(startIdx, endIdx + 1);
             
             if (dates.length < 2) return;
             
+            const scores = dates.map(d => currentData.daily_data[d].score);
             const prices = dates.map(d => currentData.daily_data[d].price);
-            const minPrice = Math.min(...prices) * 0.95;
-            const maxPrice = Math.max(...prices) * 1.05;
             
-            // 清空画布
+            const minScore = 0, maxScore = 100;
+            
             ctx.clearRect(0, 0, width, height);
             
-            // 绘制价格线
+            // 绘制评分区域图
             ctx.beginPath();
-            ctx.strokeStyle = '#2a5298';
-            ctx.lineWidth = 2;
-            
+            ctx.fillStyle = 'rgba(102, 126, 234, 0.2)';
             dates.forEach((date, i) => {
                 const x = (i / (dates.length - 1)) * width;
-                const y = height - ((prices[i] - minPrice) / (maxPrice - minPrice)) * height * 0.8 - height * 0.1;
+                const y = height - (scores[i] / 100) * height * 0.8 - height * 0.1;
+                if (i === 0) ctx.moveTo(x, height);
+                ctx.lineTo(x, y);
+                if (i === dates.length - 1) {
+                    ctx.lineTo(x, height);
+                    ctx.closePath();
+                }
+            });
+            ctx.fill();
+            
+            // 绘制评分线
+            ctx.beginPath();
+            ctx.strokeStyle = '#667eea';
+            ctx.lineWidth = 2;
+            dates.forEach((date, i) => {
+                const x = (i / (dates.length - 1)) * width;
+                const y = height - (scores[i] / 100) * height * 0.8 - height * 0.1;
                 if (i === 0) ctx.moveTo(x, y);
                 else ctx.lineTo(x, y);
             });
             ctx.stroke();
             
-            // 标记买卖信号点
+            // 标记当前点
+            const currIdx = dates.indexOf(currentDate);
+            if (currIdx >= 0) {
+                const x = (currIdx / (dates.length - 1)) * width;
+                const y = height - (scores[currIdx] / 100) * height * 0.8 - height * 0.1;
+                ctx.beginPath();
+                ctx.fillStyle = '#f59e0b';
+                ctx.arc(x, y, 6, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            // 绘制买卖信号标记
             dates.forEach((date, i) => {
-                const data = currentData.daily_data[date];
-                if (data.signal === '买入' || data.signal === '卖出') {
+                const d = currentData.daily_data[date];
+                if (d.score >= 75 || d.score <= 25) {
                     const x = (i / (dates.length - 1)) * width;
-                    const y = height - ((data.price - minPrice) / (maxPrice - minPrice)) * height * 0.8 - height * 0.1;
-                    
+                    const y = height - (d.score / 100) * height * 0.8 - height * 0.1;
                     ctx.beginPath();
-                    ctx.fillStyle = data.signal === '买入' ? '#10b981' : '#ef4444';
-                    ctx.arc(x, y, 4, 0, Math.PI * 2);
+                    ctx.fillStyle = d.score >= 75 ? '#10b981' : '#ef4444';
+                    ctx.arc(x, y, 3, 0, Math.PI * 2);
                     ctx.fill();
                 }
             });
-            
-            // 标记当前日期
-            const currentIdx = dates.indexOf(currentDate);
-            if (currentIdx >= 0) {
-                const x = (currentIdx / (dates.length - 1)) * width;
-                const y = height - ((prices[currentIdx] - minPrice) / (maxPrice - minPrice)) * height * 0.8 - height * 0.1;
-                ctx.beginPath();
-                ctx.strokeStyle = '#f59e0b';
-                ctx.lineWidth = 3;
-                ctx.arc(x, y, 6, 0, Math.PI * 2);
-                ctx.stroke();
-            }
         }
         
-        // 窗口大小改变时重绘
+        function calculateStats() {
+            const year = new Date().getFullYear().toString();
+            const yearData = Object.entries(currentData.daily_data || {})
+                .filter(([date]) => date.startsWith(year))
+                .map(([_, data]) => data);
+            
+            const stats = {
+                '强烈买入': yearData.filter(d => d.score >= 90).length,
+                '买入': yearData.filter(d => d.score >= 75 && d.score < 90).length,
+                '定投': yearData.filter(d => d.score >= 60 && d.score < 75).length,
+                '持有/观望': yearData.filter(d => d.score < 60 && d.score >= 25).length,
+                '减仓/卖出': yearData.filter(d => d.score < 25).length
+            };
+            
+            const html = Object.entries(stats).map(([label, count]) => `
+                <div class="stat-item">
+                    <div class="stat-count">${count}</div>
+                    <div class="stat-label">${label}</div>
+                </div>
+            `).join('');
+            
+            const el = document.getElementById('statsGrid');
+            if (el) el.innerHTML = html;
+        }
+        
         window.addEventListener('resize', () => {
             const date = document.getElementById('dateInput').value;
             if (date) drawChart(date);
