@@ -1,36 +1,36 @@
-name: Update Market Data
+name: 纳指模型每日更新
 
 on:
   schedule:
-    # 北京时间 22:30 (UTC 14:30)，美股收盘后
-    - cron: '30 14 * * 1-5'
-    # 备用更新 北京时间 08:00
-    - cron: '0 0 * * 1-5'
-  workflow_dispatch: # 允许手动触发
+    - cron: '30 14 * * 1-5'  # 北京时间22:30（美股收盘后），周一至周五
+  workflow_dispatch:  # 允许手动触发
 
 jobs:
-  update-data:
+  update:
     runs-on: ubuntu-latest
-    
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+
     steps:
-    - uses: actions/checkout@v3
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 设置Python
+      uses: actions/setup-python@v5
       with:
-        python-version: '3.10'
-    
-    - name: Install dependencies
+        python-version: '3.11'
+
+    - name: 安装依赖
       run: |
-        pip install yfinance pandas
-    
-    - name: Update data
-      run: |
-        python update_data.py
-    
-    - name: Commit and push if changed
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git add data/
-        git diff --quiet && git diff --staged --quiet || (git commit -m "Update market data: $(date +'%Y-%m-%d')" && git push)
+        pip install yfinance pandas numpy requests
+
+    - name: 获取数据并生成报告
+      run: python update_model.py
+
+    - name: 部署到GitHub Pages
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./output
