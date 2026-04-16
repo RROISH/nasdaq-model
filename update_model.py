@@ -34,45 +34,37 @@ position_in_range = (nasdaq_close - year_low) / (year_high - year_low) * 100
 
 # 模型评分算法
 score = 0
-signals = []
 
 # VIX评分
 if vix_close > 30:
     score += 3
-    signals.append("VIX>30 极度恐慌")
 elif vix_close > 20:
     score += 1
-    signals.append("VIX 20-30 谨慎")
 elif vix_close < 15:
     score -= 2
-    signals.append("VIX<15 极度贪婪")
 
 # 位置评分
 if position_in_range > 90:
     score -= 2
-    signals.append("接近52周高点")
 elif position_in_range < 20:
     score += 2
-    signals.append("接近52周低点")
 
 # 均线评分
 if price_vs_ma > 10:
     score -= 1
-    signals.append("远高于50日均线")
 elif price_vs_ma < -10:
     score += 1
-    signals.append("远低于50日均线")
 
 # 生成信号
 if score >= 2:
     signal = "买入"
-    signal_class = "buy"
+    signal_color = "green"
 elif score <= -2:
     signal = "卖出"
-    signal_class = "sell"
+    signal_color = "red"
 else:
     signal = "持有"
-    signal_class = "hold"
+    signal_color = "orange"
 
 # 生成操作建议
 if score >= 3:
@@ -96,7 +88,6 @@ data = {
     "position_in_range": round(position_in_range, 1),
     "score": score,
     "signal": signal,
-    "signals": signals,
     "advice": advice
 }
 
@@ -104,164 +95,97 @@ data = {
 with open('output/data.json', 'w', encoding='utf-8') as f:
     json.dump(data, f, ensure_ascii=False, indent=2)
 
-# 生成HTML页面
-html_content = f"""<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>纳指模型 - {{data['date']}}</title>
-    <style>
-        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-        body {{ 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
-        }}
-        .container {{ max-width: 400px; margin: 0 auto; }}
-        .header {{ text-align: center; color: white; margin-bottom: 20px; }}
-        .header h1 {{ font-size: 24px; margin-bottom: 5px; }}
-        .header .date {{ font-size: 14px; opacity: 0.9; }}
+# 生成简单HTML（使用字符串拼接，避免任何花括号冲突）
+date_str = data['date']
+nasdaq_str = str(data['nasdaq_close'])
+change_str = str(data['change_pct'])
+vix_str = str(data['vix'])
+ma_str = str(data['price_vs_ma'])
+position_str = str(data['position_in_range'])
+score_str = str(data['score'])
+signal_str = data['signal']
+advice_str = data['advice']
 
-        .signal-card {{ 
-            background: white; 
-            border-radius: 20px; 
-            padding: 30px; 
-            text-align: center; 
-            margin-bottom: 15px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-        }}
-        .signal-box {{ 
-            font-size: 32px; 
-            font-weight: bold; 
-            padding: 20px; 
-            border-radius: 15px; 
-            color: white;
-            margin-bottom: 15px;
-        }}
-        .buy {{ background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); }}
-        .sell {{ background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%); }}
-        .hold {{ background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }}
+# 涨跌幅颜色
+if data['change_pct'] > 0:
+    change_color = "green"
+else:
+    change_color = "red"
 
-        .score-box {{ 
-            display: inline-block; 
-            padding: 10px 20px; 
-            background: #f0f0f0; 
-            border-radius: 20px; 
-            font-size: 14px;
-            color: #666;
-        }}
+# 均线颜色
+if data['price_vs_ma'] > 0:
+    ma_color = "green"
+else:
+    ma_color = "red"
 
-        .data-card {{ 
-            background: white; 
-            border-radius: 15px; 
-            padding: 20px; 
-            margin-bottom: 15px;
-            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
-        }}
-        .data-card h3 {{ 
-            font-size: 16px; 
-            color: #333; 
-            margin-bottom: 15px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }}
-        .metric {{ 
-            display: flex; 
-            justify-content: space-between; 
-            padding: 12px 0; 
-            border-bottom: 1px solid #f0f0f0;
-            font-size: 15px;
-        }}
-        .metric:last-child {{ border-bottom: none; }}
-        .metric-label {{ color: #666; }}
-        .metric-value {{ font-weight: 600; color: #333; }}
-        .positive {{ color: #11998e; }}
-        .negative {{ color: #eb3349; }}
+html_parts = []
+html_parts.append('<!DOCTYPE html>')
+html_parts.append('<html lang="zh-CN">')
+html_parts.append('<head>')
+html_parts.append('    <meta charset="UTF-8">')
+html_parts.append('    <meta name="viewport" content="width=device-width, initial-scale=1.0">')
+html_parts.append('    <title>纳指模型 - ' + date_str + '</title>')
+html_parts.append('    <style>')
+html_parts.append('        body { font-family: Arial, sans-serif; background: #f0f0f0; padding: 20px; margin: 0; }')
+html_parts.append('        .container { max-width: 400px; margin: 0 auto; background: white; border-radius: 10px; padding: 20px; }')
+html_parts.append('        h1 { text-align: center; color: #333; font-size: 24px; }')
+html_parts.append('        .date { text-align: center; color: #666; font-size: 14px; margin-bottom: 20px; }')
+html_parts.append('        .signal { font-size: 36px; font-weight: bold; text-align: center; padding: 20px; border-radius: 10px; margin: 20px 0; }')
+html_parts.append('        .signal-green { background: #4CAF50; color: white; }')
+html_parts.append('        .signal-red { background: #f44336; color: white; }')
+html_parts.append('        .signal-orange { background: #FF9800; color: white; }')
+html_parts.append('        .score { text-align: center; font-size: 16px; color: #666; margin-bottom: 20px; }')
+html_parts.append('        .data-row { display: flex; justify-content: space-between; padding: 15px 0; border-bottom: 1px solid #eee; }')
+html_parts.append('        .data-label { color: #666; }')
+html_parts.append('        .data-value { font-weight: bold; color: #333; }')
+html_parts.append('        .green { color: #4CAF50; }')
+html_parts.append('        .red { color: #f44336; }')
+html_parts.append('        .advice { background: #f9f9f9; padding: 15px; border-radius: 8px; margin-top: 20px; }')
+html_parts.append('        .advice h3 { margin-top: 0; color: #333; }')
+html_parts.append('        .footer { text-align: center; color: #999; font-size: 12px; margin-top: 20px; }')
+html_parts.append('    </style>')
+html_parts.append('</head>')
+html_parts.append('<body>')
+html_parts.append('    <div class="container">')
+html_parts.append('        <h1>📈 纳指交易模型</h1>')
+html_parts.append('        <div class="date">' + date_str + ' 更新</div>')
+html_parts.append('        <div class="signal signal-' + signal_color + '">' + signal_str + '</div>')
+html_parts.append('        <div class="score">模型评分: ' + score_str + ' / -5~+5</div>')
+html_parts.append('        <div class="data-row">')
+html_parts.append('            <span class="data-label">纳指收盘</span>')
+html_parts.append('            <span class="data-value">' + nasdaq_str + '</span>')
+html_parts.append('        </div>')
+html_parts.append('        <div class="data-row">')
+html_parts.append('            <span class="data-label">涨跌幅</span>')
+html_parts.append('            <span class="data-value ' + change_color + '">' + change_str + '%</span>')
+html_parts.append('        </div>')
+html_parts.append('        <div class="data-row">')
+html_parts.append('            <span class="data-label">VIX恐慌指数</span>')
+html_parts.append('            <span class="data-value">' + vix_str + '</span>')
+html_parts.append('        </div>')
+html_parts.append('        <div class="data-row">')
+html_parts.append('            <span class="data-label">vs 50日均线</span>')
+html_parts.append('            <span class="data-value ' + ma_color + '">' + ma_str + '%</span>')
+html_parts.append('        </div>')
+html_parts.append('        <div class="data-row">')
+html_parts.append('            <span class="data-label">52周位置</span>')
+html_parts.append('            <span class="data-value">' + position_str + '%</span>')
+html_parts.append('        </div>')
+html_parts.append('        <div class="advice">')
+html_parts.append('            <h3>💡 操作建议</h3>')
+html_parts.append('            <p>' + advice_str + '</p>')
+html_parts.append('        </div>')
+html_parts.append('        <div class="footer">数据延迟15分钟 | 仅供参考</div>')
+html_parts.append('    </div>')
+html_parts.append('</body>')
+html_parts.append('</html>')
 
-        .advice-card {{ 
-            background: white; 
-            border-radius: 15px; 
-            padding: 20px;
-            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
-        }}
-        .advice-card h3 {{ font-size: 16px; margin-bottom: 10px; }}
-        .advice-text {{ 
-            font-size: 15px; 
-            line-height: 1.6; 
-            color: #555;
-            padding: 15px;
-            background: #f8f9fa;
-            border-radius: 10px;
-        }}
-
-        .footer {{ 
-            text-align: center; 
-            color: rgba(255,255,255,0.7); 
-            font-size: 12px; 
-            margin-top: 20px;
-        }}
-
-        @media (max-width: 380px) {{
-            body {{ padding: 15px; }}
-            .signal-box {{ font-size: 28px; }}
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>📈 纳指交易模型</h1>
-            <div class="date">{{data['date']}} 更新</div>
-        </div>
-
-        <div class="signal-card">
-            <div class="signal-box {{signal_class}}">{{data['signal']}}</div>
-            <div class="score-box">模型评分: {{data['score']}} / -5~+5</div>
-        </div>
-
-        <div class="data-card">
-            <h3>📊 市场数据</h3>
-            <div class="metric">
-                <span class="metric-label">纳指收盘</span>
-                <span class="metric-value">{{"{:,.2f}".format(data['nasdaq_close'])}}</span>
-            </div>
-            <div class="metric">
-                <span class="metric-label">涨跌幅</span>
-                <span class="metric-value {{ 'positive' if data['change_pct'] > 0 else 'negative' }}">{{"{:+.2f}}%".format(data['change_pct'])}}</span>
-            </div>
-            <div class="metric">
-                <span class="metric-label">VIX恐慌指数</span>
-                <span class="metric-value">{{"{:.2f}".format(data['vix'])}}</span>
-            </div>
-            <div class="metric">
-                <span class="metric-label">vs 50日均线</span>
-                <span class="metric-value {{ 'positive' if data['price_vs_ma'] > 0 else 'negative' }}">{{"{:+.2f}}%".format(data['price_vs_ma'])}}</span>
-            </div>
-            <div class="metric">
-                <span class="metric-label">52周位置</span>
-                <span class="metric-value">{{"{:.1f}}%".format(data['position_in_range'])}}</span>
-            </div>
-        </div>
-
-        <div class="advice-card">
-            <h3>💡 操作建议</h3>
-            <div class="advice-text">{{data['advice']}}</div>
-        </div>
-
-        <div class="footer">
-            数据延迟15分钟 | 仅供参考不构成投资建议
-        </div>
-    </div>
-</body>
-</html>"""
+html_content = '\n'.join(html_parts)
 
 with open('output/index.html', 'w', encoding='utf-8') as f:
     f.write(html_content)
 
-print(f"✅ 更新完成：{{data['date']}}")
-print(f"📊 纳指：{{data['nasdaq_close']}} ({{data['change_pct']:+.2f}}%)")
-print(f"😰 VIX：{{data['vix']:.2f}}")
-print(f"🎯 信号：{{data['signal']}} (评分: {{data['score']}})")
+print("更新完成：" + date_str)
+print("纳指：" + nasdaq_str + " (" + change_str + "%)")
+print("VIX：" + vix_str)
+print("信号：" + signal_str + " (评分: " + score_str + ")")
