@@ -1,0 +1,11 @@
+{
+  "date": "2026-04-15",
+  "nasdaq_close": 24016.02,
+  "change_pct": 1.59,
+  "vix": 18.12,
+  "price_vs_ma": 6.72,
+  "position_in_range": 100.0,
+  "score": -2,
+  "signal": "卖出",
+  "advice": "市场高位，建议分批减仓"
+}
