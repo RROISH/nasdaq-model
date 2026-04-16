@@ -106,13 +106,13 @@ def calculate_signals(ndx_df, vix_df):
         total = max(0, min(100, total))
         scores.append(total)
         
-details.append({
-    'valuation': round(val_score, 1),
-    'fear': round(fear_score, 1),
-    'trend': round(trend_score, 1),
-    'position_52w': round(pos * 100, 1),  # 确保是这个名字
-    'ma_dist': round(dist, 1)
-})
+      details.append({
+        'valuation': round(val_score, 1),
+        'fear': round(fear_score, 1),
+        'trend': round(trend_score, 1),
+        'position_52w': round(pos * 100, 1),  # 确保是这个名字
+        'ma_dist': round(dist, 1)
+      })
     
     # 7级信号分类
     signals = []
