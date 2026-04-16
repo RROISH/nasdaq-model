@@ -1,150 +1,345 @@
-<!DOCTYPE html>
+#!/usr/bin/env python3
+"""
+纳指抄底模型 - 自动数据更新脚本
+每日美股收盘后自动拉取最新数据并更新网站
+"""
+
+import pandas as pd
+import numpy as np
+import json
+import math
+from datetime import datetime
+import warnings
+warnings.filterwarnings('ignore')
+
+try:
+    import yfinance as yf
+except ImportError:
+    print("❌ 请先安装 yfinance: pip install yfinance")
+    raise
+
+def fetch_latest_data():
+    """从Yahoo Finance获取最新数据"""
+    print("📥 正在获取最新数据...")
+    
+    try:
+        # 获取纳指数据 (^IXIC)
+        print("   获取纳斯达克指数...")
+        nasdaq = yf.Ticker("^IXIC")
+        nasdaq_hist = nasdaq.history(period="3y")
+        
+        if nasdaq_hist.empty:
+            raise Exception("无法获取纳指数据")
+        
+        # 获取VIX数据 (^VIX)
+        print("   获取VIX恐慌指数...")
+        vix = yf.Ticker("^VIX")
+        vix_hist = vix.history(period="3y")
+        
+        if vix_hist.empty:
+            raise Exception("无法获取VIX数据")
+        
+        # 合并数据
+        df = pd.DataFrame({
+            'Date': [d.date() for d in nasdaq_hist.index],
+            'Close': nasdaq_hist['Close'].values,
+            'Volume': nasdaq_hist['Volume'].values
+        })
+        
+        vix_df = pd.DataFrame({
+            'Date': [d.date() for d in vix_hist.index],
+            'VIX': vix_hist['Close'].values
+        })
+        
+        df = pd.merge(df, vix_df, on='Date', how='inner')
+        df = df.sort_values('Date').reset_index(drop=True)
+        
+        print(f"✅ 获取到 {len(df)} 条数据")
+        print(f"   数据范围: {df['Date'].min()} 至 {df['Date'].max()}")
+        
+        return df
+        
+    except Exception as e:
+        print(f"❌ 获取数据失败: {e}")
+        raise
+
+def calculate_indicators(df):
+    """计算技术指标"""
+    print("📊 计算技术指标...")
+    
+    # 移动平均线
+    df['MA20'] = df['Close'].rolling(window=20).mean()
+    df['MA50'] = df['Close'].rolling(window=50).mean()
+    df['MA200'] = df['Close'].rolling(window=200).mean()
+    df['MA500'] = df['Close'].rolling(window=500).mean()
+    
+    # 估值分位 (价格/500日均线)
+    df['Valuation'] = df['Close'] / df['MA500']
+    
+    # VIX指标
+    df['VIX_MA20'] = df['VIX'].rolling(window=20).mean()
+    df['VIX_Spike'] = df['VIX'] / df['VIX_MA20']
+    
+    # RSI计算
+    delta = df['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+    rs = gain / loss
+    df['RSI'] = 100 - (100 / (1 + rs))
+    
+    # 价格偏离 (相对于50日均线)
+    df['Price_Deviation'] = (df['Close'] - df['MA50']) / df['MA50']
+    
+    # 每日涨跌幅
+    df['Daily_Return'] = df['Close'].pct_change() * 100
+    
+    print("✅ 技术指标计算完成")
+    return df
+
+def calculate_signals(df):
+    """计算买卖信号"""
+    print("🎯 计算买卖信号...")
+    
+    # ========== 买入评分 ==========
+    # VIX评分 (最高30分)
+    df['Buy_Score_VIX'] = np.where(
+        df['VIX'] > 40, 30,
+        np.where(df['VIX'] > 32, 26,
+        np.where(df['VIX'] > 26, 20,
+        np.where(df['VIX'] > 22, 10, 0)))
+    )
+    
+    # VIX激增评分 (最高20分)
+    df['Buy_Score_VIXSpike'] = np.where(
+        df['VIX_Spike'] > 2.0, 20,
+        np.where(df['VIX_Spike'] > 1.5, 15,
+        np.where(df['VIX_Spike'] > 1.2, 8,
+        np.where(df['VIX_Spike'] > 1.0, 3, 0)))
+    )
+    
+    # RSI超卖评分 (最高25分)
+    df['Buy_Score_RSI'] = np.where(
+        df['RSI'] < 25, 25,
+        np.where(df['RSI'] < 30, 20,
+        np.where(df['RSI'] < 35, 15,
+        np.where(df['RSI'] < 40, 8, 0)))
+    )
+    
+    # 估值评分 (最高15分)
+    df['Buy_Score_Valuation'] = np.where(
+        df['Valuation'] < 0.90, 15,
+        np.where(df['Valuation'] < 0.95, 10,
+        np.where(df['Valuation'] < 1.0, 5, 0))
+    )
+    
+    # 价格偏离评分 (最高10分)
+    df['Buy_Score_Deviation'] = np.where(
+        df['Price_Deviation'] < -0.08, 10,
+        np.where(df['Price_Deviation'] < -0.05, 6,
+        np.where(df['Price_Deviation'] < -0.03, 3, 0))
+    )
+    
+    # 买入总分
+    df['Buy_Score'] = (df['Buy_Score_VIX'] + 
+                      df['Buy_Score_VIXSpike'] + 
+                      df['Buy_Score_RSI'] + 
+                      df['Buy_Score_Valuation'] + 
+                      df['Buy_Score_Deviation'])
+    
+    # 买入信号：评分≥60 或 (VIX≥26且RSI<30)
+    df['Buy_Signal'] = (df['Buy_Score'] >= 60) | ((df['VIX'] >= 26) & (df['RSI'] < 30))
+    
+    # ========== 卖出评分 ==========
+    # RSI超买评分
+    df['Sell_Score_RSI'] = np.where(
+        df['RSI'] > 78, 35,
+        np.where(df['RSI'] > 72, 28,
+        np.where(df['RSI'] > 68, 15, 0))
+    )
+    
+    # 估值高位评分
+    df['Sell_Score_Valuation'] = np.where(
+        df['Valuation'] > 1.18, 30,
+        np.where(df['Valuation'] > 1.12, 18,
+        np.where(df['Valuation'] > 1.06, 6, 0))
+    )
+    
+    # VIX低位评分
+    df['Sell_Score_VIXLow'] = np.where(
+        df['VIX'] < 14, 20,
+        np.where(df['VIX'] < 16, 10, 0)
+    )
+    
+    # 价格偏离评分
+    df['Sell_Score_Deviation'] = np.where(
+        df['Price_Deviation'] > 0.12, 15,
+        np.where(df['Price_Deviation'] > 0.08, 6, 0)
+    )
+    
+    # 卖出总分
+    df['Sell_Score'] = (df['Sell_Score_RSI'] + 
+                       df['Sell_Score_Valuation'] + 
+                       df['Sell_Score_VIXLow'] + 
+                       df['Sell_Score_Deviation'])
+    
+    # 卖出信号：评分≥50
+    df['Sell_Signal'] = df['Sell_Score'] >= 50
+    
+    print("✅ 买卖信号计算完成")
+    return df
+
+def prepare_web_data(df):
+    """准备网站数据"""
+    print("📝 准备网站数据...")
+    
+    selected_cols = ['Date', 'Close', 'VIX', 'RSI', 'Valuation', 'Price_Deviation', 
+                     'Buy_Score', 'Sell_Score', 'Buy_Signal', 'Sell_Signal', 'Daily_Return']
+    
+    clean_data = []
+    for _, row in df[selected_cols].iterrows():
+        clean_row = {}
+        for col in selected_cols:
+            value = row[col]
+            if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+                clean_row[col.lower()] = None
+            elif hasattr(value, 'isoformat'):
+                clean_row[col.lower()] = str(value)
+            elif col in ['Buy_Signal', 'Sell_Signal']:
+                clean_row[col.lower().replace('_', '_')] = bool(value)
+            else:
+                clean_row[col.lower()] = value
+        clean_data.append(clean_row)
+    
+    return clean_data
+
+def generate_html(data, update_time):
+    """生成HTML文件"""
+    print("🌐 生成网页...")
+    
+    js_data = json.dumps(data, ensure_ascii=False)
+    
+    html_content = f'''<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="theme-color" content="#f44336">
-    <title>纳指模型 - 抄底信号</title>
+    <meta name="theme-color" content="#667eea">
+    <title>纳指抄底模型</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-        body { 
+        * {{ margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }}
+        body {{ 
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-            background: #f5f5f5;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             color: #333;
-            padding-bottom: 30px;
-        }
-        .container { max-width: 420px; margin: 0 auto; padding: 15px; }
-        .header { text-align: center; padding: 20px 0; }
-        .header h1 { font-size: 1.5em; color: #333; margin-bottom: 5px; display: flex; align-items: center; justify-content: center; gap: 8px; }
-        .header .update-time { font-size: 0.85em; color: #888; }
-        .card { 
-            background: white; 
-            border-radius: 16px; 
-            padding: 20px; 
-            margin-bottom: 15px; 
-            box-shadow: 0 2px 12px rgba(0,0,0,0.06);
-        }
-        .date-nav { 
+            padding-bottom: 20px;
+        }}
+        .container {{ max-width: 800px; margin: 0 auto; padding: 15px; }}
+        header {{ text-align: center; padding: 20px 15px; color: white; }}
+        header h1 {{ font-size: 1.6em; margin-bottom: 5px; }}
+        header p {{ font-size: 0.9em; opacity: 0.9; }}
+        
+        .card {{ background: white; border-radius: 12px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+        .card-title {{ color: #667eea; font-size: 1em; font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }}
+        
+        .date-nav {{ 
             display: flex; 
             align-items: center; 
             justify-content: center;
-            gap: 15px;
-            margin-bottom: 5px;
-        }
-        .nav-btn { 
+            gap: 10px; 
+            margin-bottom: 15px;
+        }}
+        .nav-btn {{ 
             width: 44px; 
             height: 44px; 
             border: none; 
-            background: #f0f0f0; 
-            color: #666; 
+            background: #667eea; 
+            color: white; 
             border-radius: 50%; 
-            font-size: 1.1em; 
+            font-size: 1.2em; 
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
             transition: all 0.2s;
-        }
-        .nav-btn:active { background: #e0e0e0; transform: scale(0.95); }
-        .nav-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-        .date-display { 
+            -webkit-tap-highlight-color: transparent;
+        }}
+        .nav-btn:active {{ background: #5a6fd6; transform: scale(0.95); }}
+        .nav-btn:disabled {{ background: #ccc; cursor: not-allowed; opacity: 0.6; }}
+        .date-display {{ 
             flex: 1; 
-            max-width: 160px;
+            max-width: 200px;
             text-align: center; 
             font-size: 1.1em; 
             font-weight: 600;
             color: #333;
             padding: 12px;
-            background: #f8f8f8;
-            border-radius: 12px;
+            background: #f5f5f5;
+            border-radius: 10px;
             cursor: pointer;
-        }
-        .date-input-hidden { position: absolute; opacity: 0; width: 0; height: 0; }
-        .signal-box { 
-            padding: 25px; 
-            border-radius: 16px; 
-            text-align: center; 
-            font-weight: 700; 
-            margin: 15px 0;
-            font-size: 1.8em;
-            color: white;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.2);
-        }
-        .signal-buy { background: linear-gradient(135deg, #4CAF50, #45a049); }
-        .signal-sell { background: linear-gradient(135deg, #f44336, #d32f2f); }
-        .signal-neutral { background: linear-gradient(135deg, #FF9800, #f57c00); }
-        .score-text { 
-            text-align: center; 
-            font-size: 0.9em; 
-            color: #666; 
-            margin-top: -10px;
-            margin-bottom: 15px;
-        }
-        .data-list { margin-top: 10px; }
-        .data-item { 
-            display: flex; 
-            justify-content: space-between; 
-            align-items: center;
-            padding: 14px 0; 
-            border-bottom: 1px solid #f0f0f0;
-        }
-        .data-item:last-child { border-bottom: none; }
-        .data-label { font-size: 0.95em; color: #666; }
-        .data-value { font-size: 1.1em; font-weight: 600; color: #333; }
-        .data-value.up { color: #4CAF50; }
-        .data-value.down { color: #f44336; }
-        .score-section { margin: 15px 0; }
-        .score-header { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 0.85em; color: #666; }
-        .score-bar { height: 8px; background: #e8e8e8; border-radius: 4px; overflow: hidden; }
-        .score-fill { height: 100%; border-radius: 4px; transition: width 0.3s ease; }
-        .score-fill.buy { background: linear-gradient(90deg, #4CAF50, #66BB6A); }
-        .score-fill.sell { background: linear-gradient(90deg, #f44336, #ef5350); }
-        .signal-list { max-height: 320px; overflow-y: auto; margin-top: 10px; }
-        .signal-item { 
-            display: flex; 
-            justify-content: space-between;
-            align-items: center;
-            padding: 12px; 
-            margin: 8px 0; 
-            background: #f8f9fa; 
-            border-radius: 10px; 
-            border-left: 4px solid #4CAF50;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-        .signal-item:active { background: #e8e8e8; }
-        .signal-item.sell { border-left-color: #f44336; }
-        .signal-item .left { text-align: left; }
-        .signal-item .date { font-weight: 600; font-size: 0.95em; color: #333; }
-        .signal-item .detail { font-size: 0.8em; color: #888; margin-top: 3px; }
-        .signal-item .score { font-weight: 700; font-size: 1em; }
-        .signal-item .score.buy { color: #4CAF50; }
-        .signal-item .score.sell { color: #f44336; }
-        .advice-box { 
-            background: #FFF8E1; 
-            border-radius: 12px; 
-            padding: 15px; 
-            margin-top: 15px;
-        }
-        .advice-title { font-weight: 600; color: #F57C00; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
-        .advice-text { color: #666; font-size: 0.95em; line-height: 1.5; }
-        footer { text-align: center; padding: 20px; color: #999; font-size: 0.75em; }
-        ::-webkit-scrollbar { width: 4px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #ccc; border-radius: 2px; }
+        }}
+        .date-input-hidden {{ 
+            position: absolute; 
+            opacity: 0; 
+            pointer-events: none;
+            width: 0;
+            height: 0;
+        }}
+        
+        .status-grid {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 12px; }}
+        .status-item {{ background: #f5f5f5; padding: 14px 8px; border-radius: 10px; text-align: center; }}
+        .status-item .label {{ color: #666; font-size: 0.7em; margin-bottom: 4px; text-transform: uppercase; }}
+        .status-item .value {{ font-size: 1.3em; font-weight: 700; color: #333; }}
+        .status-item .sub {{ font-size: 0.75em; color: #888; margin-top: 3px; }}
+        .status-item .sub.up {{ color: #e74c3c; }}
+        .status-item .sub.down {{ color: #27ae60; }}
+        
+        .signal-box {{ padding: 16px; border-radius: 10px; text-align: center; font-weight: 600; margin: 12px 0; font-size: 1.1em; }}
+        .signal-buy {{ background: #d4edda; color: #155724; border: 2px solid #28a745; }}
+        .signal-sell {{ background: #f8d7da; color: #721c24; border: 2px solid #dc3545; }}
+        .signal-neutral {{ background: #fff3cd; color: #856404; border: 2px solid #ffc107; }}
+        
+        .score-row {{ margin: 12px 0; }}
+        .score-label {{ display: flex; justify-content: space-between; font-size: 0.9em; margin-bottom: 5px; color: #555; }}
+        .score-bar {{ height: 10px; background: #e0e0e0; border-radius: 5px; overflow: hidden; }}
+        .score-fill {{ height: 100%; border-radius: 5px; transition: width 0.3s ease; }}
+        .score-green {{ background: linear-gradient(90deg, #28a745, #34ce57); }}
+        .score-yellow {{ background: linear-gradient(90deg, #ffc107, #ffdb4d); }}
+        .score-red {{ background: linear-gradient(90deg, #dc3545, #e4606d); }}
+        
+        .signal-list {{ max-height: 350px; overflow-y: auto; }}
+        .signal-item {{ padding: 12px; margin: 8px 0; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #28a745; cursor: pointer; transition: background 0.2s; }}
+        .signal-item.sell {{ border-left-color: #dc3545; }}
+        .signal-item:active {{ background: #e9ecef; }}
+        .signal-item .date {{ font-weight: 600; font-size: 0.95em; }}
+        .signal-item .info {{ font-size: 0.85em; color: #666; margin-top: 4px; }}
+        
+        .section {{ margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee; }}
+        .section-title {{ font-size: 0.95em; font-weight: 600; color: #555; margin-bottom: 10px; }}
+        .section-content {{ font-size: 0.9em; color: #666; line-height: 1.7; }}
+        
+        .highlight {{ background: #fff3cd; padding: 2px 8px; border-radius: 4px; font-weight: 600; }}
+        
+        footer {{ text-align: center; padding: 20px; color: rgba(255,255,255,0.85); font-size: 0.8em; }}
+        footer p {{ margin: 5px 0; }}
+        
+        /* 滚动条美化 */
+        ::-webkit-scrollbar {{ width: 6px; }}
+        ::-webkit-scrollbar-track {{ background: #f1f1f1; border-radius: 3px; }}
+        ::-webkit-scrollbar-thumb {{ background: #c1c1c1; border-radius: 3px; }}
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="header">
+        <header>
             <h1>📈 纳指抄底模型</h1>
-            <div class="update-time">2026-04-16 更新</div>
-        </div>
+            <p>VIX恐慌指数 + RSI超卖 + 估值</p>
+        </header>
 
         <div class="card">
+            <div class="card-title">📅 选择日期</div>
             <div class="date-nav">
                 <button class="nav-btn" id="prevBtn" onclick="prevDay()">◀</button>
                 <div class="date-display" id="dateDisplay" onclick="openDatePicker()">--</div>
@@ -154,217 +349,286 @@
         </div>
 
         <div class="card">
-            <div id="signalBox"></div>
-            <div class="score-text" id="scoreText"></div>
-            <div class="score-section">
-                <div class="score-header">
-                    <span>买入评分 (≥60触发)</span>
-                    <span id="buyScoreVal">0/100</span>
-                </div>
-                <div class="score-bar">
-                    <div class="score-fill buy" id="buyScoreBar" style="width: 0%"></div>
-                </div>
-            </div>
-            <div class="score-section">
-                <div class="score-header">
-                    <span>卖出评分 (≥50触发)</span>
-                    <span id="sellScoreVal">0/100</span>
-                </div>
-                <div class="score-bar">
-                    <div class="score-fill sell" id="sellScoreBar" style="width: 0%"></div>
-                </div>
+            <div class="card-title">📊 市场数据</div>
+            <div id="resultArea">
+                <div style="color:#888;padding:20px;text-align:center;">加载中...</div>
             </div>
         </div>
 
         <div class="card">
-            <div class="data-list" id="dataList"></div>
-            <div class="advice-box" id="adviceBox">
-                <div class="advice-title">💡 操作建议</div>
-                <div class="advice-text" id="adviceText">加载中...</div>
-            </div>
-        </div>
-
-        <div class="card">
-            <div style="font-weight: 600; color: #333; margin-bottom: 10px;">📜 历史买卖信号 (点击查询)</div>
+            <div class="card-title">📜 历史买卖信号 (点击查询)</div>
             <div class="signal-list" id="signalList"></div>
         </div>
 
+        <div class="card">
+            <div class="card-title">📖 模型说明</div>
+            <div class="section">
+                <div class="section-title">买入条件 (满足任一)</div>
+                <div class="section-content">
+                    <span class="highlight">评分 ≥ 60分</span> 或 <span class="highlight">VIX≥26且RSI<30</span><br><br>
+                    • VIX>40(30分) >32(26分) >26(20分)<br>
+                    • RSI<25(25分) <30(20分) <35(15分)<br>
+                    • 估值<0.90(15分) <0.95(10分)<br>
+                    • 价格偏离<-8%(10分)
+                </div>
+            </div>
+            <div class="section">
+                <div class="section-title">卖出条件</div>
+                <div class="section-content">
+                    <span class="highlight">评分 ≥ 50分</span><br><br>
+                    • RSI>78(35分) >72(28分)<br>
+                    • 估值>1.18(30分) >1.12(18分)<br>
+                    • VIX<14(20分)<br>
+                    • 价格偏离>12%(15分)
+                </div>
+            </div>
+        </div>
+
         <footer>
-            <p>数据来自 Yahoo Finance | 延迟15分钟 | 仅供参考</p>
+            <p>数据来源: Yahoo Finance | 更新: {update_time}</p>
+            <p>仅供参考，不构成投资建议</p>
         </footer>
     </div>
 
     <script>
-        // 历史数据（这里需要嵌入完整的数据）
-        const historyData = [/* 数据将在这里 */];
+        const historyData = {js_data};
         let currentIndex = historyData.length - 1;
         
-        function init() {
+        function init() {{
             const dateInput = document.getElementById('dateInput');
             dateInput.min = historyData[0].date;
             dateInput.max = historyData[historyData.length - 1].date;
-            updateDisplay();
+            updateDateDisplay();
+            showResult(historyData[currentIndex]);
             showSignals();
-        }
+        }}
         
-        function updateDisplay() {
+        function updateDateDisplay() {{
             const data = historyData[currentIndex];
             document.getElementById('dateDisplay').textContent = data.date;
             document.getElementById('dateInput').value = data.date;
             document.getElementById('prevBtn').disabled = (currentIndex <= 0);
             document.getElementById('nextBtn').disabled = (currentIndex >= historyData.length - 1);
-            updateSignal(data);
-            updateDataList(data);
-            updateScoreBars(data);
-            updateAdvice(data);
-        }
+        }}
         
-        function updateSignal(data) {
-            const box = document.getElementById('signalBox');
-            const text = document.getElementById('scoreText');
-            if (data.buy_signal) {
-                box.className = 'signal-box signal-buy';
-                box.textContent = '买入';
-                text.textContent = `买入评分: ${data.buy_score} / 触发线: 60`;
-            } else if (data.sell_signal) {
-                box.className = 'signal-box signal-sell';
-                box.textContent = '卖出';
-                text.textContent = `卖出评分: ${data.sell_score} / 触发线: 50`;
-            } else {
-                box.className = 'signal-box signal-neutral';
-                box.textContent = '观望';
-                text.textContent = `买${data.buy_score} / 卖${data.sell_score}`;
-            }
-        }
+        function prevDay() {{
+            if (currentIndex > 0) {{
+                currentIndex--;
+                updateDateDisplay();
+                showResult(historyData[currentIndex]);
+            }}
+        }}
         
-        function updateDataList(data) {
+        function nextDay() {{
+            if (currentIndex < historyData.length - 1) {{
+                currentIndex++;
+                updateDateDisplay();
+                showResult(historyData[currentIndex]);
+            }}
+        }}
+        
+        function openDatePicker() {{
+            const dateInput = document.getElementById('dateInput');
+            if (dateInput.showPicker) {{
+                dateInput.showPicker();
+            }} else {{
+                dateInput.click();
+            }}
+        }}
+        
+        function onDateChange() {{
+            const selectedDate = document.getElementById('dateInput').value;
+            const index = historyData.findIndex(d => d.date === selectedDate);
+            if (index !== -1) {{
+                currentIndex = index;
+                updateDateDisplay();
+                showResult(historyData[currentIndex]);
+            }}
+        }}
+        
+        function showResult(data) {{
             const change = data.daily_return || 0;
             const changeClass = change >= 0 ? 'up' : 'down';
-            const changeSign = change >= 0 ? '+' : '';
+            
             const html = `
-                <div class="data-item">
-                    <span class="data-label">纳指收盘</span>
-                    <span class="data-value">${data.close ? data.close.toFixed(2) : '--'}</span>
+                <div class="status-grid">
+                    <div class="status-item">
+                        <div class="label">纳指</div>
+                        <div class="value">${{data.close ? data.close.toFixed(0) : '--'}}</div>
+                        <div class="sub ${{changeClass}}">${{(change >= 0 ? '+' : '') + change.toFixed(2)}}%</div>
+                    </div>
+                    <div class="status-item">
+                        <div class="label">VIX</div>
+                        <div class="value">${{data.vix ? data.vix.toFixed(1) : '--'}}</div>
+                        <div class="sub">${{getVixText(data.vix)}}</div>
+                    </div>
+                    <div class="status-item">
+                        <div class="label">RSI</div>
+                        <div class="value">${{data.rsi ? data.rsi.toFixed(0) : '--'}}</div>
+                        <div class="sub">${{getRsiText(data.rsi)}}</div>
+                    </div>
+                    <div class="status-item">
+                        <div class="label">估值</div>
+                        <div class="value">${{data.valuation ? data.valuation.toFixed(2) : '--'}}</div>
+                        <div class="sub">${{getValText(data.valuation)}}</div>
+                    </div>
                 </div>
-                <div class="data-item">
-                    <span class="data-label">涨跌幅</span>
-                    <span class="data-value ${changeClass}">${changeSign}${change.toFixed(2)}%</span>
-                </div>
-                <div class="data-item">
-                    <span class="data-label">VIX恐慌指数</span>
-                    <span class="data-value">${data.vix ? data.vix.toFixed(2) : '--'}</span>
-                </div>
-                <div class="data-item">
-                    <span class="data-label">vs 50日均线</span>
-                    <span class="data-value ${data.price_deviation >= 0 ? 'up' : 'down'}">${(data.price_deviation * 100).toFixed(2)}%</span>
-                </div>
-                <div class="data-item">
-                    <span class="data-label">RSI指标</span>
-                    <span class="data-value">${data.rsi ? data.rsi.toFixed(0) : '--'} ${getRsiStatus(data.rsi)}</span>
-                </div>
-                <div class="data-item">
-                    <span class="data-label">估值分位</span>
-                    <span class="data-value">${data.valuation ? data.valuation.toFixed(2) : '--'} ${getValStatus(data.valuation)}</span>
+                ${{getSignalHtml(data)}}
+                <div style="margin-top:12px;">
+                    <div class="score-row">
+                        <div class="score-label"><span>买入评分</span><span>${{data.buy_score}}/100</span></div>
+                        <div class="score-bar"><div class="score-fill ${{data.buy_score>=60?'score-green':data.buy_score>=35?'score-yellow':'score-red'}}" style="width:${{Math.min(data.buy_score,100)}}%"></div></div>
+                    </div>
+                    <div class="score-row">
+                        <div class="score-label"><span>卖出评分</span><span>${{data.sell_score}}/100</span></div>
+                        <div class="score-bar"><div class="score-fill ${{data.sell_score>=50?'score-green':data.sell_score>=30?'score-yellow':'score-red'}}" style="width:${{Math.min(data.sell_score,100)}}%"></div></div>
+                    </div>
                 </div>
             `;
-            document.getElementById('dataList').innerHTML = html;
-        }
+            document.getElementById('resultArea').innerHTML = html;
+        }}
         
-        function updateScoreBars(data) {
-            document.getElementById('buyScoreVal').textContent = `${data.buy_score}/100`;
-            document.getElementById('buyScoreBar').style.width = `${Math.min(data.buy_score, 100)}%`;
-            document.getElementById('sellScoreVal').textContent = `${data.sell_score}/100`;
-            document.getElementById('sellScoreBar').style.width = `${Math.min(data.sell_score, 100)}%`;
-        }
+        function getSignalHtml(data) {{
+            if (data.buy_signal) {{
+                return `<div class="signal-box signal-buy">📥 买入信号 (评分${{data.buy_score}})</div>`;
+            }} else if (data.sell_signal) {{
+                return `<div class="signal-box signal-sell">📤 卖出信号 (评分${{data.sell_score}})</div>`;
+            }} else {{
+                return `<div class="signal-box signal-neutral">⏳ 观望 (买${{data.buy_score}}/卖${{data.sell_score}})</div>`;
+            }}
+        }}
         
-        function updateAdvice(data) {
-            const text = document.getElementById('adviceText');
-            if (data.buy_signal) {
-                text.textContent = data.buy_score >= 75 ? '强烈买入信号！市场恐慌情绪严重，建议积极建仓。' : '中等买入信号，可关注建仓机会。';
-            } else if (data.sell_signal) {
-                text.textContent = data.sell_score >= 65 ? '强烈卖出信号！市场高位，建议分批减仓。' : '市场处于相对高位，可考虑适当减仓。';
-            } else {
-                text.textContent = data.buy_score >= 45 ? '接近买入区域，可密切关注。' : data.sell_score >= 35 ? '接近卖出区域，注意风险。' : '市场处于中性区间，建议观望。';
-            }
-        }
+        function getVixText(vix) {{
+            if (!vix) return '--';
+            if (vix > 35) return '极度恐慌';
+            if (vix > 26) return '恐慌';
+            if (vix < 14) return '乐观';
+            return '正常';
+        }}
         
-        function getRsiStatus(rsi) {
-            if (!rsi) return '';
-            if (rsi > 70) return '(超买)';
-            if (rsi < 30) return '(超卖)';
-            return '';
-        }
+        function getRsiText(rsi) {{
+            if (!rsi) return '--';
+            if (rsi > 70) return '超买';
+            if (rsi < 30) return '超卖';
+            return '中性';
+        }}
         
-        function getValStatus(val) {
-            if (!val) return '';
-            if (val > 1.15) return '(高估)';
-            if (val < 0.93) return '(低估)';
-            return '';
-        }
+        function getValText(val) {{
+            if (!val) return '--';
+            if (val > 1.12) return '高估';
+            if (val < 0.93) return '低估';
+            return '中性';
+        }}
         
-        function prevDay() {
-            if (currentIndex > 0) {
-                currentIndex--;
-                updateDisplay();
-            }
-        }
-        
-        function nextDay() {
-            if (currentIndex < historyData.length - 1) {
-                currentIndex++;
-                updateDisplay();
-            }
-        }
-        
-        function openDatePicker() {
-            const input = document.getElementById('dateInput');
-            if (input.showPicker) input.showPicker();
-            else input.click();
-        }
-        
-        function onDateChange() {
-            const date = document.getElementById('dateInput').value;
-            const index = historyData.findIndex(d => d.date === date);
-            if (index !== -1) {
-                currentIndex = index;
-                updateDisplay();
-            }
-        }
-        
-        function showSignals() {
-            const buySignals = historyData.filter(d => d.buy_signal).reverse().slice(0, 8);
-            const sellSignals = historyData.filter(d => d.sell_signal).reverse().slice(0, 4);
-            const allSignals = [...buySignals, ...sellSignals].sort((a, b) => 
-                new Date(b.date) - new Date(a.date)
-            ).slice(0, 10);
+        function showSignals() {{
+            const buySignals = historyData.filter(d => d.buy_signal).reverse().slice(0, 15);
+            const sellSignals = historyData.filter(d => d.sell_signal).reverse().slice(0, 5);
             
             let html = '';
-            allSignals.forEach(s => {
-                const isBuy = s.buy_signal;
-                const score = isBuy ? s.buy_score : s.sell_score;
-                html += `
-                    <div class="signal-item ${isBuy ? '' : 'sell'}" onclick="goToDate('${s.date}')">
-                        <div class="left">
-                            <div class="date">${isBuy ? '📥' : '📤'} ${s.date}</div>
-                            <div class="detail">纳指${s.close.toFixed(0)} | VIX ${s.vix.toFixed(1)}</div>
+            
+            if (buySignals.length > 0) {{
+                html += '<div style="font-size:0.85em;color:#666;margin-bottom:8px;">买入信号</div>';
+                buySignals.forEach(s => {{
+                    html += `
+                        <div class="signal-item" onclick="selectSignalDate('${{s.date}}')">
+                            <div class="date">📥 ${{s.date}}</div>
+                            <div class="info">纳指${{s.close.toFixed(0)}} | VIX ${{s.vix.toFixed(1)}} | 评分${{s.buy_score}}</div>
                         </div>
-                        <div class="score ${isBuy ? 'buy' : 'sell'}">${score}分</div>
-                    </div>
-                `;
-            });
-            document.getElementById('signalList').innerHTML = html || '<div style="color:#999;padding:10px;text-align:center;">暂无信号</div>';
-        }
+                    `;
+                }});
+            }}
+            
+            if (sellSignals.length > 0) {{
+                html += '<div style="font-size:0.85em;color:#666;margin:12px 0 8px;">卖出信号</div>';
+                sellSignals.forEach(s => {{
+                    html += `
+                        <div class="signal-item sell" onclick="selectSignalDate('${{s.date}}')">
+                            <div class="date">📤 ${{s.date}}</div>
+                            <div class="info">纳指${{s.close.toFixed(0)}} | VIX ${{s.vix.toFixed(1)}} | 评分${{s.sell_score}}</div>
+                        </div>
+                    `;
+                }});
+            }}
+            
+            document.getElementById('signalList').innerHTML = html || '<div style="color:#888;padding:10px;">无历史信号</div>';
+        }}
         
-        function goToDate(date) {
+        function selectSignalDate(date) {{
             const index = historyData.findIndex(d => d.date === date);
-            if (index !== -1) {
+            if (index !== -1) {{
                 currentIndex = index;
-                updateDisplay();
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-            }
-        }
+                updateDateDisplay();
+                showResult(historyData[currentIndex]);
+                window.scrollTo({{ top: 0, behavior: 'smooth' }});
+            }}
+        }}
         
         init();
     </script>
 </body>
-</html>
+</html>'''
+    
+    return html_content
+
+def main():
+    """主函数"""
+    print("=" * 60)
+    print("📈 纳指抄底模型 - 数据更新")
+    print("=" * 60)
+    
+    try:
+        # 1. 获取最新数据
+        df = fetch_latest_data()
+        
+        # 2. 计算指标
+        df = calculate_indicators(df)
+        
+        # 3. 计算信号
+        df = calculate_signals(df)
+        
+        # 4. 准备网站数据
+        web_data = prepare_web_data(df)
+        
+        # 5. 生成HTML
+        update_time = datetime.now().strftime('%Y-%m-%d')
+        html = generate_html(web_data, update_time)
+        
+        # 6. 保存文件
+        with open('index.html', 'w', encoding='utf-8') as f:
+            f.write(html)
+        
+        print("\n" + "=" * 60)
+        print("✅ 更新完成！")
+        print("=" * 60)
+        
+        # 显示最新状态
+        latest = df.iloc[-1]
+        print(f"\n📊 最新状态 ({latest['Date']}):")
+        print(f"   纳指: {latest['Close']:.0f} ({latest['Daily_Return']:+.2f}%)")
+        print(f"   VIX: {latest['VIX']:.1f}")
+        print(f"   RSI: {latest['RSI']:.1f}")
+        print(f"   买入评分: {latest['Buy_Score']}")
+        print(f"   卖出评分: {latest['Sell_Score']}")
+        
+        if latest['Buy_Signal']:
+            print(f"   信号: 📥 买入")
+        elif latest['Sell_Signal']:
+            print(f"   信号: 📤 卖出")
+        else:
+            print(f"   信号: ⏳ 观望")
+        
+        # 统计
+        print(f"\n📈 统计:")
+        print(f"   总数据: {len(df)} 天")
+        print(f"   买入信号: {df['Buy_Signal'].sum()} 次")
+        print(f"   卖出信号: {df['Sell_Signal'].sum()} 次")
+        
+        return True
+        
+    except Exception as e:
+        print(f"\n❌ 更新失败: {e}")
+        return False
+
+if __name__ == '__main__':
+    success = main()
+    exit(0 if success else 1)
