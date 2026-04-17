@@ -1,246 +1,206 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>纳指智能加仓模型</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-    <style>
-        :root { --bg-primary: #0a0e1a; --bg-secondary: #111827; --bg-card: #1f2937; --text-primary: #f3f4f6; --text-secondary: #9ca3af; --accent-blue: #00d9ff; --accent-green: #10b981; --accent-red: #ef4444; --accent-yellow: #f59e0b; --accent-orange: #f97316; --border: #374151; }
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg-primary); color: var(--text-primary); line-height: 1.6; overflow-x: hidden; }
-        .container { max-width: 100%; padding: 16px; }
-        .header { text-align: center; padding: 20px 0; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
-        .header h1 { font-size: 24px; background: linear-gradient(135deg, var(--accent-blue), #3b82f6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 8px; }
-        .header .subtitle { color: var(--text-secondary); font-size: 14px; }
-        .update-time { text-align: center; color: var(--text-secondary); font-size: 12px; margin-bottom: 20px; }
-        .card { background: var(--bg-card); border-radius: 16px; padding: 20px; margin-bottom: 16px; border: 1px solid var(--border); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3); }
-        .card-title { font-size: 16px; font-weight: 600; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
-        .card-title .icon { width: 24px; height: 24px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 14px; }
-        .current-price { text-align: center; padding: 20px 0; }
-        .price-value { font-size: 48px; font-weight: 700; background: linear-gradient(135deg, var(--text-primary), var(--accent-blue)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-        .price-label { color: var(--text-secondary); font-size: 14px; margin-top: 8px; }
-        .recommendation { text-align: center; padding: 16px; border-radius: 12px; margin-top: 16px; font-weight: 600; font-size: 18px; }
-        .rec-hold { background: rgba(156, 163, 175, 0.1); color: var(--text-secondary); border: 1px solid var(--text-secondary); }
-        .rec-level0 { background: rgba(16, 185, 129, 0.1); color: var(--accent-green); border: 1px solid var(--accent-green); }
-        .rec-level1 { background: rgba(245, 158, 11, 0.1); color: var(--accent-yellow); border: 1px solid var(--accent-yellow); }
-        .rec-level2 { background: rgba(249, 115, 22, 0.1); color: var(--accent-orange); border: 1px solid var(--accent-orange); }
-        .rec-level3 { background: rgba(239, 68, 68, 0.1); color: var(--accent-red); border: 1px solid var(--accent-red); }
-        .metrics-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
-        .metric-item { background: var(--bg-secondary); padding: 16px; border-radius: 12px; text-align: center; }
-        .metric-value { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
-        .metric-label { font-size: 12px; color: var(--text-secondary); }
-        .metric-positive { color: var(--accent-green); }
-        .metric-negative { color: var(--accent-red); }
-        .metric-neutral { color: var(--accent-blue); }
-        .signal-list { max-height: 400px; overflow-y: auto; }
-        .signal-item { display: flex; justify-content: space-between; align-items: center; padding: 12px; background: var(--bg-secondary); border-radius: 10px; margin-bottom: 8px; border-left: 4px solid var(--border); }
-        .signal-item.level-0 { border-left-color: var(--accent-green); }
-        .signal-item.level-1 { border-left-color: var(--accent-yellow); }
-        .signal-item.level-2 { border-left-color: var(--accent-orange); }
-        .signal-item.level-3 { border-left-color: var(--accent-red); }
-        .signal-info { flex: 1; }
-        .signal-date { font-size: 13px; color: var(--text-secondary); margin-bottom: 2px; }
-        .signal-reason { font-size: 12px; color: var(--text-secondary); }
-        .signal-badge { padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
-        .badge-0 { background: rgba(16, 185, 129, 0.2); color: var(--accent-green); }
-        .badge-1 { background: rgba(245, 158, 11, 0.2); color: var(--accent-yellow); }
-        .badge-2 { background: rgba(249, 115, 22, 0.2); color: var(--accent-orange); }
-        .badge-3 { background: rgba(239, 68, 68, 0.2); color: var(--accent-red); }
-        .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
-        .stat-item { text-align: center; padding: 12px; background: var(--bg-secondary); border-radius: 10px; }
-        .stat-value { font-size: 20px; font-weight: 700; color: var(--accent-blue); margin-bottom: 4px; }
-        .stat-label { font-size: 12px; color: var(--text-secondary); }
-        .chart-container { position: relative; height: 250px; margin-top: 16px; }
-        .footer { text-align: center; padding: 20px; color: var(--text-secondary); font-size: 12px; border-top: 1px solid var(--border); margin-top: 20px; }
-        .loading { text-align: center; padding: 40px; color: var(--text-secondary); }
-        .signal-reasons { margin-top: 12px; padding: 12px; background: var(--bg-secondary); border-radius: 8px; }
-        .reason-tag { display: inline-block; padding: 4px 8px; margin: 4px; background: rgba(0, 217, 255, 0.1); color: var(--accent-blue); border-radius: 6px; font-size: 12px; }
-        .score-bar { width: 100%; height: 8px; background: var(--bg-secondary); border-radius: 4px; margin-top: 8px; overflow: hidden; }
-        .score-fill { height: 100%; border-radius: 4px; transition: width 0.5s ease; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>纳指加仓模型</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0a0e1a;color:#f3f4f6;line-height:1.6;padding-bottom:20px}
+.c{max-width:100%;padding:12px}
+.h{text-align:center;padding:12px 0;border-bottom:1px solid #374151;margin-bottom:12px}
+.h h1{font-size:20px;background:linear-gradient(135deg,#00d9ff,#3b82f6);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.h p{color:#9ca3af;font-size:12px}
+.st{text-align:center;padding:6px;font-size:12px;color:#9ca3af;margin-bottom:10px}
+.st .o{color:#ef4444}.st .k{color:#10b981}.st .l{color:#00d9ff}
+.ds{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:12px;padding:10px;background:#1f2937;border-radius:12px;border:1px solid #374151}
+.nb{width:36px;height:36px;border-radius:8px;border:1px solid #374151;background:#111827;color:#f3f4f6;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;user-select:none;-webkit-tap-highlight-color:transparent}
+.nb:active{background:#374151;transform:scale(.95)}
+.nb:disabled{opacity:.3;cursor:not-allowed}
+.dw{position:relative;flex:1;max-width:180px}
+.dw input{width:100%;padding:8px;border-radius:8px;border:1px solid #374151;background:#111827;color:#f3f4f6;font-size:14px;text-align:center;cursor:pointer;outline:none}
+.dw input::-webkit-calendar-picker-indicator{filter:invert(.7);cursor:pointer;position:absolute;right:6px;top:50%;transform:translateY(-50%)}
+.di{text-align:center;color:#9ca3af;font-size:11px;margin-bottom:6px}
+.cd{background:#1f2937;border-radius:12px;padding:16px;margin-bottom:12px;border:1px solid #374151}
+.cp{text-align:center;padding:12px 0 6px}
+.pv{font-size:40px;font-weight:700;background:linear-gradient(135deg,#f3f4f6,#00d9ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.pl{color:#9ca3af;font-size:12px;margin-top:4px}
+.pc{font-size:13px;margin-top:6px;font-weight:600}
+.rc{text-align:center;padding:12px;border-radius:10px;margin-top:12px;font-weight:700;font-size:15px}
+.r0{background:rgba(16,185,129,.15);color:#10b981;border:1px solid rgba(16,185,129,.3)}
+.r1{background:rgba(245,158,11,.15);color:#f59e0b;border:1px solid rgba(245,158,11,.3)}
+.r2{background:rgba(249,115,22,.15);color:#f97316;border:1px solid rgba(249,115,22,.4)}
+.r3{background:rgba(239,68,68,.15);color:#ef4444;border:1px solid rgba(239,68,68,.3)}
+.rh{background:rgba(156,163,175,.1);color:#9ca3af;border:1px solid rgba(156,163,175,.2)}
+.sr{margin-top:12px;padding:12px;background:#111827;border-radius:10px;border-left:3px solid #00d9ff}
+.rt{font-size:12px;color:#9ca3af;margin-bottom:8px;font-weight:600}
+.tg{display:inline-block;padding:4px 8px;margin:2px;background:rgba(0,217,255,.1);color:#00d9ff;border-radius:6px;font-size:11px;border:1px solid rgba(0,217,255,.2)}
+.sb{margin-top:10px;display:flex;align-items:center;gap:8px}
+.sl{font-size:11px;color:#9ca3af;white-space:nowrap}
+.br{flex:1;height:8px;background:#0a0e1a;border-radius:4px;overflow:hidden}
+.bf{height:100%;border-radius:4px;transition:width .4s}
+.sv{font-size:13px;font-weight:700;color:#00d9ff;min-width:32px;text-align:right}
+.ct{font-size:14px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:6px}
+.ic{width:24px;height:24px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;background:rgba(0,217,255,.1);color:#00d9ff}
+.mg{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.mi{background:#111827;padding:14px 10px;border-radius:10px;text-align:center}
+.mv{font-size:20px;font-weight:700;margin-bottom:4px}
+.ml{font-size:11px;color:#9ca3af}
+.p{color:#10b981}.n{color:#ef4444}.u{color:#00d9ff}.w{color:#f59e0b}
+.ch{position:relative;height:220px;margin-top:6px}
+.ft{text-align:center;padding:16px;color:#9ca3af;font-size:10px}
+.ec{text-align:center;padding:30px;color:#9ca3af;font-size:14px}
+.rb{padding:6px 16px;border-radius:6px;border:1px solid #00d9ff;background:rgba(0,217,255,.1);color:#00d9ff;font-size:12px;cursor:pointer;margin-top:8px}
+</style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>📈 纳指智能加仓模型</h1>
-            <div class="subtitle">基于多维技术指标的量化加仓策略</div>
-        </div>
-        <div class="update-time" id="updateTime">加载中...</div>
-        
-        <div class="card">
-            <div class="current-price">
-                <div class="price-value" id="currentPrice">--</div>
-                <div class="price-label">纳斯达克综合指数 (IXIC)</div>
-            </div>
-            <div class="recommendation" id="recommendation">加载中...</div>
-            <div class="signal-reasons" id="signalReasons" style="display:none;">
-                <div style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;">触发信号:</div>
-                <div id="reasonTags"></div>
-                <div style="margin-top:8px;font-size:12px;color:var(--text-secondary);">
-                    信号得分: <span id="signalScore" style="color:var(--accent-blue);font-weight:700;">0</span>/10
-                    <div class="score-bar"><div class="score-fill" id="scoreBar" style="width:0%;background:var(--accent-blue);"></div></div>
-                </div>
-            </div>
-        </div>
-        
-        <div class="card">
-            <div class="card-title">
-                <div class="icon" style="background:rgba(0,217,255,0.1);color:var(--accent-blue);">📊</div>
-                关键指标
-            </div>
-            <div class="metrics-grid">
-                <div class="metric-item">
-                    <div class="metric-value metric-negative" id="dd60d">--</div>
-                    <div class="metric-label">60日高点回撤</div>
-                </div>
-                <div class="metric-item">
-                    <div class="metric-value metric-neutral" id="rsi">--</div>
-                    <div class="metric-label">RSI (14日)</div>
-                </div>
-                <div class="metric-item">
-                    <div class="metric-value metric-neutral" id="ma120">--</div>
-                    <div class="metric-label">120日均线偏离</div>
-                </div>
-                <div class="metric-item">
-                    <div class="metric-value metric-neutral" id="volatility">--</div>
-                    <div class="metric-label">年化波动率</div>
-                </div>
-            </div>
-        </div>
-        
-        <div class="card">
-            <div class="card-title">
-                <div class="icon" style="background:rgba(16,185,129,0.1);color:var(--accent-green);">📉</div>
-                近期走势与回撤
-            </div>
-            <div class="chart-container"><canvas id="priceChart"></canvas></div>
-        </div>
-        
-        <div class="card">
-            <div class="card-title">
-                <div class="icon" style="background:rgba(245,158,11,0.1);color:var(--accent-yellow);">🚨</div>
-                近期加仓信号
-            </div>
-            <div class="signal-list" id="signalList"><div class="loading">加载信号记录...</div></div>
-        </div>
-        
-        <div class="card">
-            <div class="card-title">
-                <div class="icon" style="background:rgba(239,68,68,0.1);color:var(--accent-red);">📈</div>
-                模型回测统计
-            </div>
-            <div class="stats-grid">
-                <div class="stat-item"><div class="stat-value" id="statReturn">251.4%</div><div class="stat-label">总收益率</div></div>
-                <div class="stat-item"><div class="stat-value" id="statAnnual">15.0%</div><div class="stat-label">年化收益</div></div>
-                <div class="stat-item"><div class="stat-value" id="statDrawdown">-36.4%</div><div class="stat-label">最大回撤</div></div>
-                <div class="stat-item"><div class="stat-value" id="statSharpe">0.58</div><div class="stat-label">夏普比率</div></div>
-                <div class="stat-item"><div class="stat-value" id="statWinRate">89.3%</div><div class="stat-label">30天胜率</div></div>
-                <div class="stat-item"><div class="stat-value" id="statEvents">100%</div><div class="stat-label">大跌识别率</div></div>
-            </div>
-            <div style="margin-top:16px;padding:12px;background:var(--bg-secondary);border-radius:8px;font-size:13px;color:var(--text-secondary);">
-                <strong style="color:var(--text-primary);">策略说明:</strong><br>
-                • Level 0 (定投): 轻度回撤时每月定投<br>
-                • Level 1 (轻度): 中度回撤, RSI超卖<br>
-                • Level 2 (中度): 深度回撤, 偏离均线<br>
-                • Level 3 (重度): 极度恐慌, 全仓信号<br><br>
-                <strong style="color:var(--text-primary);">历史验证:</strong><br>
-                近10年识别全部14次大跌(>10%)事件<br>
-                所有加仓交易100%达到10%盈利目标
-            </div>
-        </div>
-        
-        <div class="footer">
-            纳指智能加仓模型 v10.0 | 数据仅供参考，不构成投资建议<br>
-            <span style="font-size:11px;">策略基于回撤/RSI/均线/波动率多因子模型</span>
-        </div>
-    </div>
+<div class="c">
+<div class="h"><h1>📈 纳指加仓模型</h1><p>实时数据 · 浏览器计算 · 日期查询</p></div>
+<div class="st" id="st"><span class="l">⏳ 获取数据中...</span></div>
+<div class="ds" id="ds" style="display:none">
+<button class="nb" id="pb">◀</button>
+<div class="dw"><input type="date" id="di"></div>
+<button class="nb" id="nb">▶</button>
+</div>
+<div class="di" id="di2"></div>
+<div id="ca"><div class="cd ec"><div style="font-size:32px">📡</div><div>连接数据源...</div></div></div>
+<div class="ft">仅供参考，不构成投资建议 · ← → 键盘翻页</div>
+</div>
+<script>
+const API='https://query1.finance.yahoo.com/v8/finance/chart/%5EIXIC?interval=1d&range=2y';
+let D=[],A={},L=[],C=null,cd=null;
 
-    <script>
-        // 初始数据 (将由Python脚本更新)
-        const MODEL_DATA = {"current": {"date": "2026-04-16", "price": 24102.7, "dd_60d": 0.0, "rsi": 84.4, "ma120_dist": 4.8, "volatility": 25.07, "ma20": 22257.73, "ma60": 22690.79, "ma120": 22999.19, "score": 0, "signals": [], "recommendation": "持有观望", "level": -1}, "stats": {"total_return": "251.4%", "annual_return": "15.0%", "max_drawdown": "-36.4%", "sharpe_ratio": "0.58", "win_rate_30d": "89.3%", "major_events_detected": "14/14 (100%)"}, "signals": [], "price_data": [{"date": "2025-12-05", "price": 23578.13, "dd": -1.59}, {"date": "2025-12-08", "price": 23545.9, "dd": -1.72}, {"date": "2025-12-09", "price": 23576.49, "dd": -1.59}, {"date": "2025-12-10", "price": 23654.15, "dd": -1.27}, {"date": "2025-12-11", "price": 23593.86, "dd": -1.52}, {"date": "2025-12-12", "price": 23195.17, "dd": -3.19}, {"date": "2025-12-15", "price": 23057.41, "dd": -3.76}, {"date": "2025-12-16", "price": 23111.46, "dd": -3.54}, {"date": "2025-12-17", "price": 22693.32, "dd": -5.28}, {"date": "2025-12-18", "price": 23006.36, "dd": -3.97}, {"date": "2025-12-19", "price": 23307.62, "dd": -2.72}, {"date": "2025-12-22", "price": 23428.83, "dd": -2.21}, {"date": "2025-12-23", "price": 23561.84, "dd": -1.66}, {"date": "2025-12-24", "price": 23613.31, "dd": -1.44}, {"date": "2025-12-26", "price": 23593.1, "dd": -1.53}, {"date": "2025-12-29", "price": 23474.35, "dd": -2.02}, {"date": "2025-12-30", "price": 23419.08, "dd": -2.25}, {"date": "2025-12-31", "price": 23241.99, "dd": -2.99}, {"date": "2026-01-02", "price": 23235.63, "dd": -3.02}, {"date": "2026-01-05", "price": 23395.82, "dd": -2.35}, {"date": "2026-01-06", "price": 23547.17, "dd": -1.72}, {"date": "2026-01-07", "price": 23584.28, "dd": -1.56}, {"date": "2026-01-08", "price": 23480.02, "dd": -2.0}, {"date": "2026-01-09", "price": 23671.35, "dd": -1.2}, {"date": "2026-01-12", "price": 23733.9, "dd": -0.94}, {"date": "2026-01-13", "price": 23709.87, "dd": -1.04}, {"date": "2026-01-14", "price": 23471.75, "dd": -2.03}, {"date": "2026-01-15", "price": 23530.02, "dd": -1.79}, {"date": "2026-01-16", "price": 23515.39, "dd": -1.85}, {"date": "2026-01-20", "price": 22954.32, "dd": -4.19}, {"date": "2026-01-21", "price": 23224.82, "dd": -3.06}, {"date": "2026-01-22", "price": 23436.02, "dd": -2.18}, {"date": "2026-01-23", "price": 23501.24, "dd": -1.91}, {"date": "2026-01-26", "price": 23601.36, "dd": -1.49}, {"date": "2026-01-27", "price": 23817.1, "dd": -0.07}, {"date": "2026-01-28", "price": 23857.45, "dd": 0.0}, {"date": "2026-01-29", "price": 23685.12, "dd": -0.72}, {"date": "2026-01-30", "price": 23461.82, "dd": -1.66}, {"date": "2026-02-02", "price": 23592.11, "dd": -1.11}, {"date": "2026-02-03", "price": 23255.19, "dd": -2.52}, {"date": "2026-02-04", "price": 22904.58, "dd": -3.99}, {"date": "2026-02-05", "price": 22540.59, "dd": -5.52}, {"date": "2026-02-06", "price": 23031.21, "dd": -3.46}, {"date": "2026-02-09", "price": 23238.67, "dd": -2.59}, {"date": "2026-02-10", "price": 23102.47, "dd": -3.16}, {"date": "2026-02-11", "price": 23066.47, "dd": -3.32}, {"date": "2026-02-12", "price": 22597.15, "dd": -5.28}, {"date": "2026-02-13", "price": 22546.67, "dd": -5.49}, {"date": "2026-02-17", "price": 22578.38, "dd": -5.36}, {"date": "2026-02-18", "price": 22753.63, "dd": -4.63}, {"date": "2026-02-19", "price": 22682.73, "dd": -4.92}, {"date": "2026-02-20", "price": 22886.07, "dd": -4.07}, {"date": "2026-02-23", "price": 22627.27, "dd": -5.16}, {"date": "2026-02-24", "price": 22863.68, "dd": -4.17}, {"date": "2026-02-25", "price": 23152.08, "dd": -2.96}, {"date": "2026-02-26", "price": 22878.38, "dd": -4.1}, {"date": "2026-02-27", "price": 22668.21, "dd": -4.98}, {"date": "2026-03-02", "price": 22748.86, "dd": -4.65}, {"date": "2026-03-03", "price": 22516.69, "dd": -5.62}, {"date": "2026-03-04", "price": 22807.48, "dd": -4.4}, {"date": "2026-03-05", "price": 22748.99, "dd": -4.65}, {"date": "2026-03-06", "price": 22387.68, "dd": -6.16}, {"date": "2026-03-09", "price": 22695.95, "dd": -4.87}, {"date": "2026-03-10", "price": 22697.1, "dd": -4.86}, {"date": "2026-03-11", "price": 22716.13, "dd": -4.78}, {"date": "2026-03-12", "price": 22311.98, "dd": -6.48}, {"date": "2026-03-13", "price": 22105.36, "dd": -7.34}, {"date": "2026-03-16", "price": 22374.18, "dd": -6.22}, {"date": "2026-03-17", "price": 22479.53, "dd": -5.78}, {"date": "2026-03-18", "price": 22152.42, "dd": -7.15}, {"date": "2026-03-19", "price": 22090.69, "dd": -7.41}, {"date": "2026-03-20", "price": 21647.61, "dd": -9.26}, {"date": "2026-03-23", "price": 21946.76, "dd": -8.01}, {"date": "2026-03-24", "price": 21761.89, "dd": -8.78}, {"date": "2026-03-25", "price": 21929.82, "dd": -8.08}, {"date": "2026-03-26", "price": 21408.08, "dd": -10.27}, {"date": "2026-03-27", "price": 20948.36, "dd": -12.19}, {"date": "2026-03-30", "price": 20794.64, "dd": -12.84}, {"date": "2026-03-31", "price": 21590.63, "dd": -9.5}, {"date": "2026-04-01", "price": 21840.95, "dd": -8.45}, {"date": "2026-04-02", "price": 21879.18, "dd": -8.29}, {"date": "2026-04-06", "price": 21996.34, "dd": -7.8}, {"date": "2026-04-07", "price": 22017.85, "dd": -7.71}, {"date": "2026-04-08", "price": 22634.99, "dd": -5.12}, {"date": "2026-04-09", "price": 22822.42, "dd": -4.34}, {"date": "2026-04-10", "price": 22902.89, "dd": -4.0}, {"date": "2026-04-13", "price": 23183.74, "dd": -2.82}, {"date": "2026-04-14", "price": 23639.08, "dd": -0.92}, {"date": "2026-04-15", "price": 24016.02, "dd": 0.0}, {"date": "2026-04-16", "price": 24102.7, "dd": 0.0}]};
-        
-        function initPage() {
-            const data = MODEL_DATA;
-            const current = data.current;
-            
-            document.getElementById('updateTime').textContent = '更新时间: ' + current.date + ' | 数据延迟约15分钟';
-            document.getElementById('currentPrice').textContent = current.price.toLocaleString();
-            
-            const recEl = document.getElementById('recommendation');
-            recEl.textContent = current.recommendation;
-            recEl.className = 'recommendation rec-level' + current.level;
-            
-            if (current.signals.length > 0) {
-                document.getElementById('signalReasons').style.display = 'block';
-                const tagsContainer = document.getElementById('reasonTags');
-                tagsContainer.innerHTML = current.signals.map(s => `<span class="reason-tag">${s}</span>`).join('');
-                document.getElementById('signalScore').textContent = current.score;
-                document.getElementById('scoreBar').style.width = (current.score / 10 * 100) + '%';
-                const barColors = ['#10b981', '#f59e0b', '#f97316', '#ef4444'];
-                const colorIdx = current.level >= 0 ? Math.min(current.level, 3) : 0;
-                document.getElementById('scoreBar').style.background = barColors[colorIdx];
-            }
-            
-            document.getElementById('dd60d').textContent = current.dd_60d + '%';
-            document.getElementById('dd60d').className = 'metric-value ' + (current.dd_60d <= -10 ? 'metric-negative' : (current.dd_60d <= -5 ? 'metric-neutral' : 'metric-positive'));
-            document.getElementById('rsi').textContent = current.rsi;
-            document.getElementById('rsi').className = 'metric-value ' + (current.rsi < 30 ? 'metric-green' : (current.rsi > 70 ? 'metric-negative' : 'metric-neutral'));
-            document.getElementById('ma120').textContent = current.ma120_dist + '%';
-            document.getElementById('volatility').textContent = current.volatility + '%';
-            
-            renderSignals(data.signals);
-            renderChart(data.price_data);
-        }
-        
-        function renderSignals(signals) {
-            const container = document.getElementById('signalList');
-            if (!signals || signals.length === 0) {
-                container.innerHTML = '<div style="text-align:center;color:var(--text-secondary);padding:20px;">暂无近期信号</div>';
-                return;
-            }
-            const reversed = [...signals].reverse();
-            container.innerHTML = reversed.map(s => {
-                const level = parseInt(s.action.split('_')[2]);
-                const levelNames = ['定投', '轻度', '中度', '重度'];
-                const levelColors = ['badge-0', 'badge-1', 'badge-2', 'badge-3'];
-                return `<div class="signal-item level-${level}"><div class="signal-info"><div class="signal-date">${s.date} @ ${s.price.toLocaleString()}</div><div class="signal-reason">${s.reasons ? s.reasons.join(', ') : ''}</div></div><div class="signal-badge ${levelColors[level]}">${levelNames[level]}</div></div>`;
-            }).join('');
-        }
-        
-        function renderChart(priceData) {
-            const ctx = document.getElementById('priceChart').getContext('2d');
-            const dates = priceData.map(d => d.date.slice(5));
-            const prices = priceData.map(d => d.price);
-            const dd = priceData.map(d => d.dd);
-            
-            new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: dates,
-                    datasets: [
-                        { label: '纳指价格', data: prices, borderColor: '#00d9ff', backgroundColor: 'rgba(0, 217, 255, 0.1)', borderWidth: 2, fill: true, tension: 0.4, pointRadius: 0, yAxisID: 'y' },
-                        { label: '60日回撤(%)', data: dd, borderColor: '#ef4444', backgroundColor: 'transparent', borderWidth: 1, borderDash: [5, 5], pointRadius: 0, yAxisID: 'y1' }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: { mode: 'index', intersect: false },
-                    plugins: {
-                        legend: { labels: { color: '#9ca3af', font: { size: 11 } } },
-                        tooltip: { backgroundColor: 'rgba(17, 24, 39, 0.9)', titleColor: '#f3f4f6', bodyColor: '#9ca3af', borderColor: '#374151', borderWidth: 1 }
-                    },
-                    scales: {
-                        x: { grid: { color: '#374151', drawBorder: false }, ticks: { color: '#9ca3af', font: { size: 10 }, maxTicksLimit: 8 } },
-                        y: { type: 'linear', display: true, position: 'left', grid: { color: '#374151', drawBorder: false }, ticks: { color: '#9ca3af', font: { size: 10 } } },
-                        y1: { type: 'linear', display: true, position: 'right', grid: { drawOnChartArea: false }, ticks: { color: '#ef4444', font: { size: 10 } } }
-                    }
-                }
-            });
-        }
-        
-        document.addEventListener('DOMContentLoaded', initPage);
-    </script>
+function sa(id,h){document.getElementById(id).innerHTML=h}
+function ge(id){return document.getElementById(id)}
+
+async function ld(){
+ sa('st','<span class="l">⏳ 获取数据...</span>');
+ try{
+  const r=await fetch(API);
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  const j=await r.json();
+  const R=j.chart.result[0];
+  const ts=R.timestamp,q=R.indicators.quote[0];
+  D=[];
+  for(let i=0;i<ts.length;i++)if(q.close[i]!==null)D.push({d:new Date(ts[i]*1e3).toISOString().split('T')[0],c:q.close[i]});
+  calc();
+  sa('st','<span class="k">✓ 已更新 '+D.length+' 个交易日</span>');
+  ui();
+ }catch(e){sa('st','<span class="o">✗ 失败: '+e.message+'</span>');err()}
+}
+
+function calc(){
+ const n=D.length,c=D.map(x=>x.c);
+ const sma=(p)=>{const r=[];for(let i=0;i<n;i++){if(i<p-1){r.push(null);continue}let s=0;for(let j=0;j<p;j++)s+=c[i-j];r.push(s/p)}return r};
+ const m20=sma(20),m60=sma(60),m120=sma(120);
+ 
+ const rsi=(()=>{const r=[],g=[],l=[];for(let i=0;i<n;i++){if(!i){r.push(50);g.push(0);l.push(0);continue}const ch=c[i]-c[i-1];g.push(ch>0?ch:0);l.push(ch<0?-ch:0);if(i<14){r.push(50);continue}let sg=0,sl=0;for(let j=i-13;j<=i;j++){sg+=g[j];sl+=l[j]}r.push(sl===0?100:100-100/(1+sg/sl))}return r})();
+ 
+ const r60=(()=>{const r=[];for(let i=0;i<n;i++){let mx=c[i];for(let j=Math.max(0,i-59);j<=i;j++)if(c[j]>mx)mx=c[j];r.push((c[i]-mx)/mx*100)}return r})();
+ 
+ const d120=c.map((x,i)=>!m120[i]?0:(x-m120[i])/m120[i]*100);
+ 
+ const ret=c.map((x,i)=>!i?0:(x-c[i-1])/c[i-1]);
+ const vol=(()=>{const r=[];for(let i=0;i<n;i++){if(i<19){r.push(NaN);continue}let s=0;for(let j=i-19;j<=i;j++)s+=ret[j];const m=s/20;let v=0;for(let j=i-19;j<=i;j++)v+=(ret[j]-m)**2;r.push(Math.sqrt(v/20)*Math.sqrt(252)*100)}return r})();
+ 
+ A={};L=[];
+ for(let i=0;i<n;i++){
+  let sc=0,sg=[];
+  const dd=r60[i];
+  if(dd<=-20){sc+=4;sg.push(`极度回撤 ${dd.toFixed(1)}%`)}
+  else if(dd<=-15){sc+=3;sg.push(`深度回撤 ${dd.toFixed(1)}%`)}
+  else if(dd<=-10){sc+=2;sg.push(`中度回撤 ${dd.toFixed(1)}%`)}
+  else if(dd<=-7){sc+=1;sg.push(`轻度回撤 ${dd.toFixed(1)}%`)}
+  
+  const rv=rsi[i];
+  if(rv<20){sc+=2;sg.push(`RSI极度超卖 ${rv.toFixed(0)}`)}
+  else if(rv<30){sc+=1;sg.push(`RSI超卖 ${rv.toFixed(0)}`)}
+  
+  const md=d120[i];
+  if(md<-15){sc+=2;sg.push(`严重偏离120日均线 ${md.toFixed(1)}%`)}
+  else if(md<-10){sc+=1;sg.push(`偏离120日均线 ${md.toFixed(1)}%`)}
+  
+  if(i>=252){let mn=c[i],mx=c[i];for(let j=i-252;j<i;j++){if(c[j]<mn)mn=c[j];if(c[j]>mx)mx=c[j]}if(mx>mn){const p=(c[i]-mn)/(mx-mn)*100;if(p<20){sc+=1;sg.push('价格处于20%分位')}}}
+  
+  if(i>=60&&!isNaN(vol[i])){let a=0;for(let j=i-60;j<i;j++)a+=isNaN(vol[j])?0:vol[j];a/=60;if(a>0&&vol[i]>a*2){sc+=1;sg.push(`恐慌性波动 ${vol[i].toFixed(1)}%`)}}
+  
+  let ac,lv,re;
+  if(sc>=7){ac='ADD3';lv=3;re='强烈建议加仓'}
+  else if(sc>=5){ac='ADD2';lv=2;re='建议加仓'}
+  else if(sc>=3){ac='ADD1';lv=1;re='轻度加仓'}
+  else if(sc>=1&&dd<=-5){ac='ADD0';lv=0;re='定投机会'}
+  else{ac='HOLD';lv=-1;re='持有观望'}
+  
+  A[D[i].d]={dt:D[i].d,pr:c[i],dd:dd,rs:rv,d120:md,vl:vol[i],m20:m20[i],m60:m60[i],m120:m120[i],sc:sc,sg:sg,lv:lv,re:re};
+  L.push(D[i].d);
+ }
+}
+
+function ui(){
+ ge('ds').style.display='flex';
+ const inp=ge('di');
+ inp.min=L[0];inp.max=L[L.length-1];
+ cd=L[L.length-1];inp.value=cd;
+ show(cd);
+ 
+ inp.addEventListener('change',e=>{
+  const v=e.target.value;
+  if(A[v]){cd=v;show(v)}
+  else{const t=new Date(v);let cl=L[0],md=1e14;for(const d of L){const df=Math.abs(new Date(d)-t);if(df<md){md=df;cl=d}}cd=cl;inp.value=cl;show(cl)}
+ });
+ 
+ ge('pb').addEventListener('click',()=>nav(-1));
+ ge('nb').addEventListener('click',()=>nav(1));
+ document.addEventListener('keydown',e=>{if(e.key==='ArrowLeft')nav(-1);if(e.key==='ArrowRight')nav(1)});
+}
+
+function nav(d){
+ const i=L.indexOf(cd);
+ if(i<0)return;
+ const ni=i+d;
+ if(ni>=0&&ni<L.length){cd=L[ni];ge('di').value=cd;show(cd)}
+}
+
+function show(d){
+ const a=A[d];if(!a)return;
+ const o=new Date(d+'T00:00:00'),wd=['周日','周一','周二','周三','周四','周五','周六'];
+ const isL=d===L[L.length-1];
+ sa('di2',d+' '+wd[o.getDay()]+(isL?' <span style="color:#10b981">● 最新</span>':''));
+ 
+ const i=L.indexOf(d);
+ let ch='';
+ if(i>0){const p=A[L[i-1]];if(p){const c=((a.pr-p.pr)/p.pr*100);ch='<span class="'+(c>=0?'p':'n')+'">'+(c>=0?'▲':'▼')+' '+Math.abs(c).toFixed(2)+'%</span>'}}
+ 
+ let sg='';
+ if(a.sg&&a.sg.length){
+  const cl=['#10b981','#f59e0b','#f97316','#ef4444'];
+  const co=a.sc>0?cl[Math.min(a.lv,3)]:'#374151';
+  sg='<div class="sr"><div class="rt">📊 触发信号</div>'+a.sg.map(x=>'<span class="tg">'+x+'</span>').join('')+'<div class="sb"><span class="sl">信号强度</span><div class="br"><div class="bf" style="width:'+(a.sc/10*100)+'%;background:'+co+'"></div></div><span class="sv">'+a.sc+'/10</span></div></div>';
+ }
+ 
+ const fm=(v)=>v===null||v===undefined||isNaN(v)?'--':((v>0?'+':'')+v.toFixed(2));
+ const cc=(v,f)=>v===null||isNaN(v)?'u':f(v);
+ 
+ sa('ca','<div class="cd"><div class="cp"><div class="pv">'+a.pr.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</div><div class="pl">纳斯达克综合指数 (IXIC)</div><div class="pc">'+ch+'</div></div><div class="rc r'+Math.max(a.lv,0)+'">'+a.re+'</div>'+sg+'</div><div class="cd"><div class="ct"><div class="ic">📊</div>关键指标</div><div class="mg"><div class="mi"><div class="mv '+cc(a.dd,v=>v<=-10?'n':(v<=-5?'w':'p'))+'">'+fm(a.dd)+'%</div><div class="ml">60日高点回撤</div></div><div class="mi"><div class="mv '+cc(a.rs,v=>v<30?'n':(v>70?'w':'u'))+'">'+fm(a.rs)+'</div><div class="ml">RSI (14日)</div></div><div class="mi"><div class="mv '+cc(a.d120,v=>v<-10?'n':(v<0?'w':'p'))+'">'+fm(a.d120)+'%</div><div class="ml">120日均线偏离</div></div><div class="mi"><div class="mv '+cc(a.vl,v=>v>40?'n':(v>25?'w':'u'))+'">'+fm(a.vl)+'%</div><div class="ml">年化波动率</div></div></div></div><div class="cd"><div class="ct"><div class="ic" style="background:rgba(16,185,129,0.1);color:#10b981">📉</div>近期走势</div><div class="ch"><canvas id="pc"></canvas></div></div>');
+ 
+ chart(d);
+}
+
+function chart(cd){
+ const x=ge('pc').getContext('2d');
+ if(C)C.destroy();
+ const ci=L.indexOf(cd),si=Math.max(0,ci-30),ei=Math.min(L.length-1,ci+3);
+ const sl=L.slice(si,ei+1),ds=sl.map(d=>d.slice(5)),ps=sl.map(d=>A[d].pr),dd=sl.map(d=>A[d].dd||0);
+ const pt=sl.map(d=>d===cd?5:0),pc=sl.map(d=>d===cd?'#fff':'transparent');
+ C=new Chart(x,{type:'line',data:{labels:ds,datasets:[{label:'纳指',data:ps,borderColor:'#00d9ff',backgroundColor:(c)=>{const g=c.chart.ctx.createLinearGradient(0,0,0,220);g.addColorStop(0,'rgba(0,217,255,0.15)');g.addColorStop(1,'rgba(0,217,255,0)');return g},borderWidth:2,fill:true,tension:.3,pointRadius:pt,pointBackgroundColor:pc,pointBorderColor:'#00d9ff',pointBorderWidth:2,yAxisID:'y'},{label:'回撤%',data:dd,borderColor:'#ef4444',backgroundColor:'transparent',borderWidth:1,borderDash:[4,4],pointRadius:0,tension:.3,yAxisID:'y1'}]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{labels:{color:'#9ca3af',font:{size:11},usePointStyle:true}},tooltip:{backgroundColor:'rgba(17,24,39,.95)',titleColor:'#f3f4f6',bodyColor:'#9ca3af',borderColor:'#374151',borderWidth:1,padding:10,callbacks:{title:(t)=>sl[t[0].dataIndex]}}},scales:{x:{grid:{color:'#374151',drawBorder:false},ticks:{color:'#9ca3af',font:{size:10},maxTicksLimit:8}},y:{type:'linear',display:true,position:'left',grid:{color:'#374151',drawBorder:false},ticks:{color:'#9ca3af',font:{size:10}}},y1:{type:'linear',display:true,position:'right',grid:{drawOnChartArea:false},ticks:{color:'#ef4444',font:{size:10}}}}}});
+}
+
+function err(){
+ sa('ca','<div class="cd ec"><div style="font-size:32px">⚠️</div><div style="margin:8px 0">数据获取失败</div><div style="font-size:12px;color:#9ca3af;margin-bottom:12px">Yahoo Finance 连接问题，请检查网络</div><button class="rb" onclick="ld()">🔄 重试</button></div>');
+}
+
+document.addEventListener('DOMContentLoaded',ld);
+</script>
 </body>
 </html>
