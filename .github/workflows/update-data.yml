@@ -2,8 +2,8 @@ name: Update Nasdaq Data
 
 on:
   schedule:
-    - cron: '0 6 * * *'
-  workflow_dispatch:
+    - cron: '0 6 * * *'  # UTC 6:00 (北京时间 14:00)
+  workflow_dispatch:  # 允许手动触发
 
 permissions:
   contents: write
@@ -13,13 +13,56 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-    - uses: actions/setup-python@v4
       with:
-        python-version: '3.10'
-    - run: pip install yfinance pandas numpy requests
-    - run: python update_data.py
-    - run: |
+        fetch-depth: 0  # 获取完整历史用于数据增量更新
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'  # 升级到3.11更稳定
+        cache: 'pip'  # 缓存pip依赖
+    
+    - name: Install dependencies
+      run: |
+        pip install --upgrade pip
+        pip install yfinance pandas numpy requests  # 添加requests
+        # 验证安装
+        python -c "import yfinance; print('yfinance version:', yfinance.__version__)"
+        python -c "import pandas; print('pandas version:', pandas.__version__)"
+    
+    - name: Run update script
+      run: |
+        # 显示当前时间
+        echo "Current time: $(date)"
+        echo "Running update script..."
+        python update_data.py
+      timeout-minutes: 10  # 超时保护
+    
+    - name: Check output
+      run: |
+        if [ -f "data/nasdaq_data.json" ]; then
+          echo "✅ Data file exists"
+          # 检查文件大小（确保不为空）
+          size=$(stat -c%s "data/nasdaq_data.json")
+          echo "File size: $size bytes"
+          # 检查最新日期
+          latest_date=$(python3 -c "import json; d=json.load(open('data/nasdaq_data.json')); print(sorted(d['daily_data'].keys())[-1])")
+          echo "Latest data date: $latest_date"
+        else
+          echo "❌ Data file missing!"
+          exit 1
+        fi
+    
+    - name: Commit and push
+      run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
         git add data/nasdaq_data.json
-        git diff --quiet && git diff --staged --quiet || (git commit -m "Update data" && git push)
+        # 只在有变更时提交
+        if git diff --staged --quiet; then
+          echo "ℹ️ No changes to commit"
+        else
+          git commit -m "Update data: $(date +'%Y-%m-%d')"
+          git push
+          echo "✅ Data updated successfully"
+        fi
