@@ -14,17 +14,17 @@ jobs:
     steps:
     - uses: actions/checkout@v3
       with:
-        fetch-depth: 0  # 获取完整历史用于数据增量更新
+        fetch-depth: 0
     
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.11'  # 不再使用pip缓存，避免requirements.txt依赖
+        python-version: '3.11'
     
     - name: Install dependencies
       run: |
         pip install --upgrade pip
-        pip install yfinance pandas numpy requests
+        pip install yfinance pandas numpy
         # 验证安装
         python -c "import yfinance; print('yfinance version:', yfinance.__version__)"
         python -c "import pandas; print('pandas version:', pandas.__version__)"
@@ -32,9 +32,8 @@ jobs:
     - name: Run update script
       run: |
         echo "Current time: $(date)"
-        echo "Running update script..."
         python update_data.py
-      timeout-minutes: 10  # 超时保护
+      timeout-minutes: 10
     
     - name: Check output
       run: |
