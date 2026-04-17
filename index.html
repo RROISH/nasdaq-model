@@ -82,6 +82,8 @@ header p { color: var(--gray); font-size: 12px; margin-top: 4px; }
 .alert-title { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
 .alert-desc { font-size: 13px; color: var(--gray); }
 
+.update-info { text-align: center; font-size: 11px; color: var(--gray); margin-top: 8px; }
+
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--gray); border-radius: 2px; }
@@ -127,10 +129,11 @@ header p { color: var(--gray); font-size: 12px; margin-top: 4px; }
                     <div id="statPercentile" class="stat-value">--</div>
                 </div>
                 <div class="stat-item">
-                    <div class="stat-label">恐慌指数</div>
+                    <div class="stat-label">VIX恐慌指数</div>
                     <div id="statVIX" class="stat-value">--</div>
                 </div>
             </div>
+            <div class="update-info" id="updateInfo"></div>
         </div>
 
         <div class="card">
@@ -151,7 +154,7 @@ header p { color: var(--gray); font-size: 12px; margin-top: 4px; }
     </div>
 
     <div class="footer">
-        数据仅供参考，不构成投资建议 · 恐慌指数为20日波动率年化<br>
+        数据仅供参考，不构成投资建议 · VIX为真实恐慌指数<br>
         模型规则：回撤≥10%/15%/20%/25% 分4批加仓 · 不卖出 · 长期持有
     </div>
 </div>
@@ -165,151 +168,68 @@ const CONFIG = {
     lookback: 252
 };
 
-let priceData = [];
+let modelData = null;
 
-function saveData() {
-    localStorage.setItem('ndx_history', JSON.stringify(priceData));
-    localStorage.setItem('ndx_last_update', new Date().toISOString());
-}
-
-function loadLocal() {
-    const saved = localStorage.getItem('ndx_history');
-    if (saved) {
-        try {
-            priceData = JSON.parse(saved);
-            return true;
-        } catch(e) { return false; }
-    }
-    return false;
-}
-
-function calcRSI(data, period) {
-    if (data.length < period + 1) return 50;
-    let gains = 0, losses = 0;
-    for (let i = data.length - period; i < data.length; i++) {
-        const change = data[i].close - data[i-1].close;
-        if (change > 0) gains += change;
-        else losses -= change;
-    }
-    const avgGain = gains / period;
-    const avgLoss = losses / period;
-    if (avgLoss === 0) return 100;
-    const rs = avgGain / avgLoss;
-    return 100 - (100 / (1 + rs));
-}
-
-function calcHigh252(data) {
-    const slice = data.slice(-CONFIG.lookback);
-    return Math.max(...slice.map(d => d.close));
-}
-
-function calcChange20D(data) {
-    if (data.length < 21) return 0;
-    const cur = data[data.length-1].close;
-    const prev = data[data.length-21].close;
-    return (cur / prev - 1) * 100;
-}
-
-function calcPercentile(data, period) {
-    if (data.length < period) return 50;
-    const slice = data.slice(-period);
-    const current = slice[slice.length-1].close;
-    const sorted = slice.map(d => d.close).sort((a,b) => a-b);
-    let rank = 0;
-    for (let i = 0; i < sorted.length; i++) {
-        if (sorted[i] <= current) rank++;
-        else break;
-    }
-    return (rank / sorted.length) * 100;
-}
-
-function calcVol(data, period) {
-    if (data.length < period + 1) return 0;
-    const returns = [];
-    for (let i = data.length - period; i < data.length; i++) {
-        returns.push(Math.log(data[i].close / data[i-1].close));
-    }
-    const mean = returns.reduce((a,b) => a+b, 0) / returns.length;
-    const variance = returns.reduce((s, r) => s + (r-mean)**2, 0) / returns.length;
-    const std = Math.sqrt(variance);
-    return std * Math.sqrt(252) * 100;
-}
-
-function getRiskLevel(dd, rsi, change20d) {
+// ==================== 风险等级判断 ====================
+function getRiskLevel(dd, rsi, change20d, vix) {
     if (rsi > 80 || dd > -5 || change20d > 8) return { level: 'high', text: '🔴 高风险', class: 'risk-high' };
     if (rsi > 70 || dd > -10 || change20d > 5) return { level: 'mid', text: '🟠 中风险', class: 'risk-mid' };
     if (rsi > 50 || dd > -15) return { level: 'low', text: '🟡 低风险', class: 'risk-low' };
     return { level: 'min', text: '🟢 极低风险', class: 'risk-min' };
 }
 
-function backtestBuys(data) {
-    const cycles = [];
-    let current = null;
-    
-    for (let i = CONFIG.lookback; i < data.length; i++) {
-        const row = data[i];
-        const slice = data.slice(i - CONFIG.lookback, i + 1);
-        const high252 = Math.max(...slice.map(d => d.close));
-        const dd = (row.close / high252 - 1) * 100;
-        
-        if (current === null && dd <= CONFIG.initialDD) {
-            current = { startDate: row.date, startPrice: row.close, startDD: dd, buys: [{batch:1, price: row.close, dd, date: row.date}], nextThreshold: CONFIG.initialDD + CONFIG.stepDD, lowestDD: dd };
-        } else if (current) {
-            if (dd < current.lowestDD) current.lowestDD = dd;
-            const batchCount = current.buys.length;
-            if (batchCount < CONFIG.maxBatch && dd <= current.nextThreshold) {
-                current.buys.push({batch: batchCount + 1, price: row.close, dd, date: row.date});
-                current.nextThreshold += CONFIG.stepDD;
-            }
-            if (dd > -3 && (new Date(row.date) - new Date(current.startDate)) / 86400000 > 30) {
-                current.endDate = row.date;
-                current.endPrice = row.close;
-                cycles.push(current);
-                current = null;
-            }
-        }
-    }
-    if (current) cycles.push(current);
-    return cycles;
-}
-
+// ==================== 渲染页面 ====================
 function render() {
-    if (priceData.length < 30) {
-        document.getElementById('loading').textContent = '数据不足，请刷新重试或等待数据累积';
+    if (!modelData || !modelData.price_data || modelData.price_data.length < 30) {
+        document.getElementById('loading').textContent = '数据不足，请刷新重试';
         return;
     }
     
+    const current = modelData.current;
+    const priceData = modelData.price_data;
     const last = priceData[priceData.length - 1];
-    const prev = priceData[priceData.length - 2] || last;
-    const high252 = calcHigh252(priceData);
-    const dd = (last.close / high252 - 1) * 100;
-    const rsi = calcRSI(priceData, CONFIG.rsiPeriod);
-    const change20d = calcChange20D(priceData);
-    const percentile = calcPercentile(priceData, 252);
-    const vol = calcVol(priceData, 20);
-    const change1d = (last.close / prev.close - 1) * 100;
-    const risk = getRiskLevel(dd, rsi, change20d);
     
-    document.getElementById('currentPrice').textContent = last.close.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    const change1d = current.change_1d;
+    const dd = current.drawdown;
+    const rsi = current.rsi;
+    const change20d = current.change_20d;
+    const percentile = current.percentile;
+    const vix = current.vix;
+    const risk = getRiskLevel(dd, rsi, change20d, vix);
+    
+    // 价格
+    document.getElementById('currentPrice').textContent = current.price.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
     const changeEl = document.getElementById('priceChange');
     changeEl.textContent = (change1d >= 0 ? '+' : '') + change1d.toFixed(2) + '%';
     changeEl.className = 'price-change ' + (change1d >= 0 ? 'price-up' : 'price-down');
     
+    // 风险标签
     const badge = document.getElementById('riskBadge');
     badge.textContent = risk.text;
     badge.className = 'risk-badge ' + risk.class;
     
+    // 指标
     document.getElementById('statDD').textContent = dd.toFixed(1) + '%';
     document.getElementById('statDD').style.color = dd <= -10 ? 'var(--green)' : (dd <= -5 ? 'var(--yellow)' : 'var(--red)');
+    
     document.getElementById('statRSI').textContent = rsi.toFixed(1);
     document.getElementById('statRSI').style.color = rsi > 80 ? 'var(--red)' : (rsi > 70 ? 'var(--orange)' : 'var(--text)');
+    
     document.getElementById('stat20D').textContent = (change20d >= 0 ? '+' : '') + change20d.toFixed(1) + '%';
     document.getElementById('stat20D').style.color = change20d > 8 ? 'var(--red)' : (change20d > 5 ? 'var(--orange)' : 'var(--text)');
+    
     document.getElementById('statPercentile').textContent = percentile.toFixed(0) + '%';
     document.getElementById('statPercentile').style.color = percentile > 90 ? 'var(--red)' : (percentile > 70 ? 'var(--orange)' : 'var(--green)');
-    document.getElementById('statVIX').textContent = vol.toFixed(1);
-    document.getElementById('statVIX').style.color = vol > 25 ? 'var(--red)' : (vol > 15 ? 'var(--orange)' : 'var(--green)');
     
+    document.getElementById('statVIX').textContent = vix.toFixed(1);
+    document.getElementById('statVIX').style.color = vix > 25 ? 'var(--red)' : (vix > 15 ? 'var(--orange)' : 'var(--green)');
+    
+    // 更新时间
+    if (modelData.update_time) {
+        document.getElementById('updateInfo').textContent = '更新时间: ' + modelData.update_time;
+    }
+    
+    // 操作建议
     const actionBox = document.getElementById('actionBox');
     const actionText = document.getElementById('actionText');
     const actionSub = document.getElementById('actionSub');
@@ -333,12 +253,13 @@ function render() {
         actionSub.textContent = '深度回调，建议分批重仓';
     }
     
+    // 下一批加仓信息
     const levels = [CONFIG.initialDD, CONFIG.initialDD + CONFIG.stepDD, CONFIG.initialDD + CONFIG.stepDD*2, CONFIG.initialDD + CONFIG.stepDD*3];
     let nextInfo = '';
     for (let i = 0; i < levels.length; i++) {
         if (dd > levels[i]) {
             const need = (dd - levels[i]).toFixed(1);
-            const targetPrice = (high252 * (1 + levels[i]/100)).toFixed(0);
+            const targetPrice = (current.high_252 * (1 + levels[i]/100)).toFixed(0);
             nextInfo = `距离第${i+1}批加仓（回撤${levels[i]}%）还需跌 ${need}%（约${targetPrice}点）`;
             break;
         }
@@ -346,6 +267,7 @@ function render() {
     if (!nextInfo) nextInfo = '当前处于加仓区间，建议按批次执行';
     nextBuyInfo.textContent = nextInfo;
     
+    // 警告栏
     const alertBar = document.getElementById('alertBar');
     if (dd <= CONFIG.initialDD) {
         alertBar.className = 'alert-bar alert-ready';
@@ -356,31 +278,27 @@ function render() {
         alertBar.innerHTML = '<div class="alert-title">⏳ 等待加仓信号</div><div class="alert-desc">距离首仓触发（回撤10%）还需跌 ' + dist + '%</div>';
     }
     
-    // 只显示近1年记录
-    const allCycles = backtestBuys(priceData);
-    const oneYearAgo = new Date();
-    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-    const cutoff = oneYearAgo.toISOString().split('T')[0];
-    const cycles = allCycles.filter(c => c.startDate >= cutoff);
+    // 加仓记录（只显示近1年）
+    const signals = modelData.signals || [];
     const historyList = document.getElementById('historyList');
     
-    if (cycles.length === 0) {
+    if (signals.length === 0) {
         historyList.innerHTML = '<div style="text-align:center; color:var(--gray); padding:20px;">近1年无加仓记录</div>';
     } else {
-        historyList.innerHTML = cycles.slice().reverse().map(c => {
-            const avgCost = c.buys.reduce((s,b) => s+b.price, 0) / c.buys.length;
-            const endP = c.endPrice || last.close;
+        historyList.innerHTML = signals.slice().reverse().map(c => {
+            const avgCost = c.batches.reduce((s,b) => s+b.price, 0) / c.batches.length;
+            const endP = c.end_price || current.price;
             const profit = ((endP / avgCost - 1) * 100).toFixed(1);
-            const status = c.endDate ? `已结束 (+${profit}%)` : `<span style="color:var(--green)">持仓中 (+${profit}%)</span>`;
-            const tags = c.buys.map(b => `<span class="history-tag tag-batch${b.batch}">${b.batch}批</span>`).join('');
+            const status = c.end_date ? `已结束 (+${profit}%)` : `<span style="color:var(--green)">持仓中 (+${profit}%)</span>`;
+            const tags = c.batches.map(b => `<span class="history-tag tag-batch${b.batch}">${b.batch}批</span>`).join('');
             return `<div class="history-item">
                 <div>
-                    <div style="font-weight:600;">${c.startDate} ${tags}</div>
-                    <div class="history-date">${c.buys.length}批买入 成本:${avgCost.toFixed(0)} 最低回撤:${c.lowestDD.toFixed(1)}%</div>
+                    <div style="font-weight:600;">${c.start_date} ${tags}</div>
+                    <div class="history-date">${c.batches.length}批买入 成本:${avgCost.toFixed(0)} 最低回撤:${c.lowest_dd.toFixed(1)}%</div>
                 </div>
                 <div class="history-info">
                     <div class="history-price">${status}</div>
-                    <div class="history-date">${c.endDate || '至今'}</div>
+                    <div class="history-date">${c.end_date || '至今'}</div>
                 </div>
             </div>`;
         }).join('');
@@ -390,109 +308,260 @@ function render() {
     document.getElementById('content').style.display = 'block';
 }
 
-// ==================== 数据获取：雅虎财经（通过CORS代理）====================
-function fetchYahooHistory() {
-    return new Promise((resolve, reject) => {
-        const proxies = [
-            'https://api.allorigins.win/raw?url=',
-            'https://corsproxy.io/?',
-            'https://api.codetabs.com/v1/proxy?quest='
-        ];
-        const yahooUrl = 'https://query1.finance.yahoo.com/v8/finance/chart/%5EIXIC?interval=1d&range=1y';
-        
-        function tryProxy(index) {
-            if (index >= proxies.length) {
-                reject('所有代理均失败');
-                return;
+// ==================== 数据获取 ====================
+
+// 从本地JSON文件加载
+async function loadLocalJson() {
+    try {
+        const response = await fetch('model_data.json?t=' + Date.now());
+        if (response.ok) {
+            const data = await response.json();
+            if (data && data.price_data && data.price_data.length > 0) {
+                modelData = data;
+                console.log('本地数据加载成功:', data.price_data.length, '条');
+                return true;
             }
-            
-            fetch(proxies[index] + encodeURIComponent(yahooUrl))
-                .then(r => r.json())
-                .then(data => {
-                    if (data.chart && data.chart.result && data.chart.result[0]) {
-                        const result = data.chart.result[0];
-                        const timestamps = result.timestamp;
-                        const closes = result.indicators.quote[0].close;
-                        const hist = [];
-                        for (let i = 0; i < timestamps.length; i++) {
-                            if (closes[i] !== null) {
-                                const date = new Date(timestamps[i] * 1000).toISOString().split('T')[0];
-                                hist.push({ date, close: closes[i] });
-                            }
-                        }
-                        resolve(hist);
-                    } else {
-                        reject('invalid data');
-                    }
-                })
-                .catch(() => tryProxy(index + 1));
         }
-        
-        tryProxy(0);
-    });
+    } catch(e) {
+        console.log('本地JSON加载失败:', e);
+    }
+    return false;
 }
 
-// ==================== 数据获取：腾讯实时（JSONP）====================
-function fetchTencentRealtime() {
-    return new Promise((resolve, reject) => {
-        const script = document.createElement('script');
-        script.src = 'https://qt.gtimg.cn/q=ixic&_=' + Date.now();
-        script.onload = function() {
-            try {
-                const v = window['v_ixic'];
-                if (v) {
-                    const content = v.replace(/^v_ixic=/, '').replace(/^"/, '').replace(/"$/, '');
-                    const p = content.split(';');
-                    const price = parseFloat(p[1]);
-                    if (price > 0) {
-                        resolve(price);
-                    } else {
-                        reject('invalid price');
-                    }
-                } else {
-                    reject('no data');
+// 从Yahoo Finance获取（通过CORS代理）
+async function fetchFromYahoo() {
+    const proxies = [
+        'https://api.allorigins.win/raw?url=',
+        'https://corsproxy.io/?',
+        'https://api.codetabs.com/v1/proxy?quest='
+    ];
+    
+    // 获取纳斯达克历史
+    async function fetchNDX(proxyIndex) {
+        if (proxyIndex >= proxies.length) throw new Error('所有代理均失败');
+        const url = proxies[proxyIndex] + encodeURIComponent('https://query1.finance.yahoo.com/v8/finance/chart/%5EIXIC?interval=1d&range=1y');
+        try {
+            const r = await fetch(url);
+            const data = await r.json();
+            if (data.chart && data.chart.result && data.chart.result[0]) {
+                return data.chart.result[0];
+            }
+            throw new Error('invalid data');
+        } catch(e) {
+            if (proxyIndex + 1 < proxies.length) return fetchNDX(proxyIndex + 1);
+            throw e;
+        }
+    }
+    
+    // 获取VIX历史
+    async function fetchVIX(proxyIndex) {
+        if (proxyIndex >= proxies.length) throw new Error('所有代理均失败');
+        const url = proxies[proxyIndex] + encodeURIComponent('https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX?interval=1d&range=1y');
+        try {
+            const r = await fetch(url);
+            const data = await r.json();
+            if (data.chart && data.chart.result && data.chart.result[0]) {
+                return data.chart.result[0];
+            }
+            throw new Error('invalid data');
+        } catch(e) {
+            if (proxyIndex + 1 < proxies.length) return fetchVIX(proxyIndex + 1);
+            throw e;
+        }
+    }
+    
+    const [ndxResult, vixResult] = await Promise.all([
+        fetchNDX(0).catch(() => null),
+        fetchVIX(0).catch(() => null)
+    ]);
+    
+    if (!ndxResult) throw new Error('无法获取纳斯达克数据');
+    
+    // 处理数据
+    const ndxTimestamps = ndxResult.timestamp;
+    const ndxCloses = ndxResult.indicators.quote[0].close;
+    
+    const vixDict = {};
+    if (vixResult) {
+        const vixTimestamps = vixResult.timestamp;
+        const vixCloses = vixResult.indicators.quote[0].close;
+        for (let i = 0; i < vixTimestamps.length; i++) {
+            if (vixCloses[i] !== null) {
+                const date = new Date(vixTimestamps[i] * 1000).toISOString().split('T')[0];
+                vixDict[date] = vixCloses[i];
+            }
+        }
+    }
+    
+    // 生成价格数据
+    const priceData = [];
+    for (let i = 0; i < ndxTimestamps.length; i++) {
+        if (ndxCloses[i] !== null) {
+            const date = new Date(ndxTimestamps[i] * 1000).toISOString().split('T')[0];
+            priceData.push({
+                date: date,
+                close: ndxCloses[i]
+            });
+        }
+    }
+    
+    // 计算指标
+    const closePrices = priceData.map(d => d.close);
+    const lookback = Math.min(252, closePrices.length);
+    
+    // 回撤
+    let high252 = 0;
+    for (let i = 0; i < priceData.length; i++) {
+        const windowStart = Math.max(0, i - lookback + 1);
+        const window = closePrices.slice(windowStart, i + 1);
+        high252 = Math.max(...window);
+        priceData[i].dd = (closePrices[i] / high252 - 1) * 100;
+    }
+    
+    // RSI
+    for (let i = 0; i < priceData.length; i++) {
+        if (i < 14) {
+            priceData[i].rsi = 50;
+        } else {
+            let gains = 0, losses = 0;
+            for (let j = i - 13; j <= i; j++) {
+                const change = closePrices[j] - closePrices[j-1];
+                if (change > 0) gains += change;
+                else losses -= change;
+            }
+            const avgGain = gains / 14;
+            const avgLoss = losses / 14;
+            if (avgLoss === 0) priceData[i].rsi = 100;
+            else {
+                const rs = avgGain / avgLoss;
+                priceData[i].rsi = 100 - (100 / (1 + rs));
+            }
+        }
+    }
+    
+    // VIX
+    for (let i = 0; i < priceData.length; i++) {
+        priceData[i].vix = vixDict[priceData[i].date] || 20;
+    }
+    
+    // 估值百分位
+    for (let i = 0; i < priceData.length; i++) {
+        if (i < 30) {
+            priceData[i].percentile = 50;
+        } else {
+            const windowStart = Math.max(0, i - lookback + 1);
+            const window = closePrices.slice(windowStart, i + 1);
+            let rank = 0;
+            for (let j = 0; j < window.length; j++) {
+                if (window[j] <= closePrices[i]) rank++;
+            }
+            priceData[i].percentile = (rank / window.length) * 100;
+        }
+    }
+    
+    // 当前指标
+    const last = priceData[priceData.length - 1];
+    const prev = priceData[priceData.length - 2] || last;
+    const change20d = priceData.length >= 21 ? (last.close / priceData[priceData.length - 21].close - 1) * 100 : 0;
+    
+    // 生成信号
+    const signals = generateSignals(priceData);
+    
+    modelData = {
+        current: {
+            date: last.date,
+            price: last.close,
+            prev_price: prev.close,
+            change_1d: (last.close / prev.close - 1) * 100,
+            drawdown: last.dd,
+            rsi: last.rsi,
+            change_20d: change20d,
+            percentile: last.percentile,
+            vix: last.vix,
+            high_252: high252
+        },
+        price_data: priceData,
+        signals: signals,
+        update_time: new Date().toLocaleString('zh-CN')
+    };
+    
+    return true;
+}
+
+// 生成信号（客户端版本）
+function generateSignals(priceData) {
+    const signals = [];
+    let inPosition = false;
+    let currentSignal = null;
+    
+    for (let i = 0; i < priceData.length; i++) {
+        const row = priceData[i];
+        const dd = row.dd;
+        
+        if (!inPosition && dd <= CONFIG.initialDD) {
+            inPosition = true;
+            currentSignal = {
+                start_date: row.date,
+                start_price: row.close,
+                start_dd: dd,
+                batches: [{batch: 1, price: row.close, dd: dd, date: row.date}],
+                next_threshold: CONFIG.initialDD + CONFIG.stepDD,
+                lowest_dd: dd
+            };
+        } else if (inPosition) {
+            if (dd < currentSignal.lowest_dd) currentSignal.lowest_dd = dd;
+            
+            const batchCount = currentSignal.batches.length;
+            if (batchCount < CONFIG.maxBatch && dd <= currentSignal.next_threshold) {
+                currentSignal.batches.push({
+                    batch: batchCount + 1,
+                    price: row.close,
+                    dd: dd,
+                    date: row.date
+                });
+                currentSignal.next_threshold += CONFIG.stepDD;
+            }
+            
+            if (dd > -3) {
+                const daysHeld = (new Date(row.date) - new Date(currentSignal.start_date)) / 86400000;
+                if (daysHeld > 30) {
+                    currentSignal.end_date = row.date;
+                    currentSignal.end_price = row.close;
+                    signals.push(currentSignal);
+                    inPosition = false;
+                    currentSignal = null;
                 }
-            } catch(e) { reject(e); }
-        };
-        script.onerror = reject;
-        document.head.appendChild(script);
-    });
+            }
+        }
+    }
+    
+    if (inPosition && currentSignal) {
+        signals.push(currentSignal);
+    }
+    
+    return signals;
 }
 
 // ==================== 主流程 ====================
 async function init() {
-    const hasLocal = loadLocal();
+    // 先尝试加载本地JSON
+    const hasLocal = await loadLocalJson();
     
-    try {
-        const yahooData = await fetchYahooHistory();
-        priceData = yahooData;
-        saveData();
-        console.log('雅虎数据获取成功:', yahooData.length, '条');
-    } catch(e) {
-        console.log('雅虎数据获取失败:', e);
-        if (!hasLocal) {
+    if (!hasLocal) {
+        // 尝试从Yahoo获取
+        try {
+            await fetchFromYahoo();
+            console.log('Yahoo数据获取成功');
+        } catch(e) {
+            console.log('Yahoo数据获取失败:', e);
             document.getElementById('loading').innerHTML = 
                 '<div style="padding:20px;">' +
                 '<p>⚠️ 数据获取失败</p>' +
-                '<p style="font-size:13px; margin-top:10px;">请检查网络连接，或稍后重试</p>' +
-                '<p style="font-size:12px; margin-top:10px; color:#666;">错误: ' + e + '</p>' +
+                '<p style="font-size:13px; margin-top:10px;">请确保 model_data.json 文件存在，或检查网络连接</p>' +
+                '<p style="font-size:12px; margin-top:10px; color:#666;">错误: ' + e.message + '</p>' +
                 '</div>';
             return;
         }
-    }
-    
-    try {
-        const realPrice = await fetchTencentRealtime();
-        const today = new Date().toISOString().split('T')[0];
-        const last = priceData[priceData.length - 1];
-        if (last && last.date === today) {
-            last.close = realPrice;
-        } else {
-            priceData.push({ date: today, close: realPrice });
-        }
-        saveData();
-    } catch(e) {
-        console.log('实时数据获取失败:', e);
     }
     
     render();
