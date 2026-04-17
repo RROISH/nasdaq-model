@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-纳指买卖模型 - v4.0 国内数据源版
-使用新浪财经/东方财富（国内直连，无需代理）
+纳指买卖模型 - v4.1 AKShare参数修复版
+使用新浪财经（国内直连，无需代理）
 估值(40) + 恐慌(35) + 趋势(25) = 100分
 """
 
@@ -30,12 +30,16 @@ def fetch_ndx_sina():
     print("获取纳指100数据（新浪财经）...")
     
     try:
-        # 使用akshare获取美股指数历史数据（新浪财经源）
-        # 纳斯达克100指数代码：NDX
-        df = ak.index_us_stock_sina(symbol=".NDX", period="10y")
+        # 关键修复：ak.index_us_stock_sina() 只接受symbol参数，不接受period
+        # 它会返回从2004年至今的所有数据，约5000+行
+        df = ak.index_us_stock_sina(symbol=".NDX")
         
         if df.empty:
             raise ValueError("新浪返回空数据")
+        
+        # 关键修复：只取最近10年的数据（约252个交易日/年）
+        # 原始数据从2004年开始有5000+行，需要截断
+        df = df.tail(252 * 10)  # 最近10年
         
         # 标准化列名
         df = df.rename(columns={
@@ -49,7 +53,7 @@ def fetch_ndx_sina():
         
         print(f"  ✓ 获取 {len(df)} 条记录，最新日期: {df['Date'].max().strftime('%Y-%m-%d')}")
         
-        # 数据新鲜度检查（新浪财经美股有15分钟延迟）
+        # 数据新鲜度检查
         now = datetime.now()
         days_diff = (now - df['Date'].max()).days
         if days_diff > 1:
@@ -66,34 +70,31 @@ def fetch_vix_sina():
     print("获取 VIX 恐慌指数（新浪财经）...")
     
     try:
-        # 新浪财经VIX页面：https://quotes.sina.cn/global/hq/quotes.php?code=VIX
-        # 尝试通过akshare获取芝加哥期权交易所VIX
-        # 注意：新浪财经的VIX可能不是实时更新，需做容错
+        # VIX在新浪的代码是.VIX
+        df = ak.index_us_stock_sina(symbol=".VIX")
         
-        try:
-            # 尝试获取VIX日线（如果akshare支持）
-            df = ak.index_vix(start_date=(datetime.now()-timedelta(days=365*10)).strftime("%Y%m%d"), 
-                             end_date=datetime.now().strftime("%Y%m%d"))
-            if not df.empty:
-                df = df.reset_index()
-                df = df.rename(columns={'日期': 'Date', '收盘价': 'Close'})
-                df['Date'] = pd.to_datetime(df['Date'])
-                df['Date'] = df['Date'].dt.tz_localize(None)
-                print(f"  ✓ VIX获取成功，共{len(df)}条")
-                return df[['Date', 'Close']].dropna()
-        except Exception as e:
-            print(f"  ⚠️ AKShare VIX获取失败: {e}")
+        if df.empty:
+            raise ValueError("VIX返回空数据")
         
-        # 如果akshare失败，使用默认值返回空DataFrame
-        print("  ⚠️ 使用默认VIX值20继续")
-        return pd.DataFrame(columns=['Date', 'Close'])
+        # 同样截取最近10年
+        df = df.tail(252 * 10)
+        
+        df = df.rename(columns={
+            'date': 'Date',
+            'close': 'Close'
+        })
+        df['Date'] = pd.to_datetime(df['Date'])
+        df['Date'] = df['Date'].dt.tz_localize(None)
+        
+        print(f"  ✓ VIX获取成功，共{len(df)}条，最新日期: {df['Date'].max().strftime('%Y-%m-%d')}")
+        return df[['Date', 'Close']].dropna()
         
     except Exception as e:
-        print(f"  ⚠️ VIX获取失败: {e}")
+        print(f"  ⚠️ VIX获取失败: {e}，使用默认值20继续")
         return pd.DataFrame(columns=['Date', 'Close'])
 
 def calculate_signals(ndx_df, vix_df, ticker_used):
-    """计算三维度交易信号（与原逻辑一致）"""
+    """计算三维度交易信号"""
     print("\n计算三维度评分...")
     
     # 合并数据
@@ -214,7 +215,7 @@ def calculate_signals(ndx_df, vix_df, ticker_used):
     return result
 
 def main():
-    print(f"=== 纳指模型 v4.0 (新浪财经数据源) ===")
+    print(f"=== 纳指模型 v4.1 (AKShare修复版) ===")
     print(f"时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     
     try:
@@ -263,7 +264,7 @@ def main():
             'last_update': datetime.now().isoformat(),
             'data_source': 'sina',
             'index_used': ticker_used,
-            'version': '4.0',
+            'version': '4.1',
             'daily_data': old_data
         }
         
