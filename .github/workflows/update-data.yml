@@ -2,8 +2,8 @@ name: Update Nasdaq Data
 
 on:
   schedule:
-    - cron: '0 6 * * *'  # UTC 6:00 (北京时间 14:00)
-  workflow_dispatch:  # 允许手动触发
+    - cron: '0 6 * * *'  # 北京时间 14:00（运行在国内源，无需考虑美股收盘时间）
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -13,8 +13,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-      with:
-        fetch-depth: 0
     
     - name: Set up Python
       uses: actions/setup-python@v4
@@ -24,10 +22,7 @@ jobs:
     - name: Install dependencies
       run: |
         pip install --upgrade pip
-        pip install yfinance pandas numpy
-        # 验证安装
-        python -c "import yfinance; print('yfinance version:', yfinance.__version__)"
-        python -c "import pandas; print('pandas version:', pandas.__version__)"
+        pip install akshare pandas numpy  # 使用akshare替代yfinance
     
     - name: Run update script
       run: |
