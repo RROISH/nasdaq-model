@@ -1,14 +1,14 @@
 {
   "current": {
-    "date": "2026-06-08",
-    "price": 26016.88,
-    "prev_price": 25709.43,
-    "change_1d": 1.2,
-    "drawdown": -3.98,
-    "rsi": 48.8,
-    "change_20d": -0.88,
-    "percentile": 92.8,
-    "vix": 18.64,
+    "date": "2026-06-09",
+    "price": 25227.96,
+    "prev_price": 25929.66,
+    "change_1d": -2.71,
+    "drawdown": -6.89,
+    "rsi": 40.9,
+    "change_20d": -3.98,
+    "percentile": 90.5,
+    "vix": 21.26,
     "high_252": 27093.9
   },
   "price_data": [
@@ -2014,11 +2014,19 @@
     },
     {
       "date": "2026-06-08",
-      "close": 26016.88,
-      "dd": -3.98,
-      "rsi": 48.8,
-      "vix": 18.64,
+      "close": 25929.66,
+      "dd": -4.3,
+      "rsi": 47.4,
+      "vix": 18.92,
       "percentile": 92.8
+    },
+    {
+      "date": "2026-06-09",
+      "close": 25227.96,
+      "dd": -6.89,
+      "rsi": 40.9,
+      "vix": 21.26,
+      "percentile": 90.5
     }
   ],
   "signals": [
@@ -2040,5 +2048,5 @@
       "end_price": 24887.1
     }
   ],
-  "update_time": "2026-06-08 17:18:00"
+  "update_time": "2026-06-09 16:26:22"
 }
