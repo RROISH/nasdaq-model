@@ -1,14 +1,14 @@
 {
   "current": {
     "date": "2026-06-18",
-    "price": NaN,
+    "price": 26517.93,
     "prev_price": 26021.66,
-    "change_1d": NaN,
-    "drawdown": NaN,
-    "rsi": 39.8,
-    "change_20d": NaN,
-    "percentile": 0.0,
-    "vix": 18.44,
+    "change_1d": 1.91,
+    "drawdown": -2.13,
+    "rsi": 45.6,
+    "change_20d": 0.94,
+    "percentile": 96.0,
+    "vix": 16.4,
     "high_252": 27093.9
   },
   "price_data": [
@@ -2014,11 +2014,11 @@
     },
     {
       "date": "2026-06-18",
-      "close": NaN,
-      "dd": NaN,
-      "rsi": 39.8,
-      "vix": 18.44,
-      "percentile": 0.0
+      "close": 26517.93,
+      "dd": -2.13,
+      "rsi": 45.6,
+      "vix": 16.4,
+      "percentile": 96.0
     }
   ],
   "signals": [
@@ -2040,5 +2040,5 @@
       "end_price": 24887.1
     }
   ],
-  "update_time": "2026-06-19 16:28:18"
+  "update_time": "2026-06-20 15:29:13"
 }
