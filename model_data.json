@@ -1,15 +1,15 @@
 {
   "current": {
-    "date": "2026-10-05",
-    "price": 27477.31,
-    "prev_price": 27190.86,
-    "change_1d": 1.05,
+    "date": "2026-10-06",
+    "price": 27638.72,
+    "prev_price": 27477.31,
+    "change_1d": 0.59,
     "drawdown": 0.0,
-    "rsi": 78.1,
-    "change_20d": 3.66,
+    "rsi": 79.4,
+    "change_20d": 4.61,
     "percentile": 100.0,
-    "vix": 15.52,
-    "high_252": 27477.31
+    "vix": 15.0,
+    "high_252": 27638.72
   },
   "price_data": [
     {
@@ -2019,6 +2019,14 @@
       "rsi": 78.1,
       "vix": 15.52,
       "percentile": 100.0
+    },
+    {
+      "date": "2026-10-06",
+      "close": 27638.72,
+      "dd": 0.0,
+      "rsi": 79.4,
+      "vix": 15.0,
+      "percentile": 100.0
     }
   ],
   "signals": [
@@ -2040,5 +2048,5 @@
       "end_price": 24887.1
     }
   ],
-  "update_time": "2026-10-05 21:18:22"
+  "update_time": "2026-10-06 19:14:37"
 }
